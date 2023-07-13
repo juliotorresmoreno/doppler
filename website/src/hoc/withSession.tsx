@@ -3,6 +3,7 @@ import Loading from '../components/Loading'
 import authSlice from '../features/auth'
 import { useGetSession } from '../services/auth'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { RootState } from '../store'
 
 type ResultProps = {
   [x: string | number | symbol]: any
@@ -12,7 +13,7 @@ const withSession = function <T = any>(
   WrappedComponent: React.ComponentType<any>
 ) {
   const Result: React.FC<T & ResultProps> = (props) => {
-    const session = useAppSelector((state: any) => state.auth.session)
+    const session = useAppSelector((state: RootState) => state.auth.session)
     const [data, setData] = useState<any>(null)
     const { isLoading, get } = useGetSession()
     const dispatch = useAppDispatch()
@@ -31,7 +32,7 @@ const withSession = function <T = any>(
 
     if (isLoading) return <Loading />
 
-    return <WrappedComponent {...props} />
+    return <WrappedComponent {...props} session={session} />
   }
 
   return Result

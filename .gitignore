@@ -6,3 +6,4 @@ vendor
 certs/*
 http
 config.yml
+.vercel

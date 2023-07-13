@@ -1,9 +1,9 @@
 import React from 'react'
 import PageTemplate from '../layouts/PageTemplate'
 
-const NotFoundPage: React.FC = () => {
+const HomePage: React.FC = () => {
   const header = {
-    title: 'NotFound',
+    title: 'Home',
     description: 'programa de super poderes',
   }
 
@@ -14,4 +14,4 @@ const NotFoundPage: React.FC = () => {
   )
 }
 
-export default NotFoundPage
+export default HomePage

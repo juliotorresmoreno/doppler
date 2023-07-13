@@ -1,4 +1,5 @@
 import { combineReducers, configureStore } from '@reduxjs/toolkit'
+import authSlice, { AuthState } from '../features/auth'
 import storage from 'redux-persist/lib/storage'
 import { setupListeners } from '@reduxjs/toolkit/query'
 
@@ -20,9 +21,13 @@ const persistConfig: PersistConfig<any> = {
   blacklist: [],
 }
 
-export type RootState = {}
+export type RootState = {
+  auth: AuthState
+}
 
-export const rootReducers = combineReducers<RootState>({})
+export const rootReducers = combineReducers<RootState>({
+  auth: authSlice.reducer,
+})
 
 const persistedReducer = persistReducer<RootState>(persistConfig, rootReducers)
 
