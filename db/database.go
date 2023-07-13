@@ -3,6 +3,7 @@ package db
 import (
 	"github.com/juliotorresmoreno/doppler/config"
 	"github.com/juliotorresmoreno/doppler/model"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -24,6 +25,8 @@ func makeConnection() (*gorm.DB, error) {
 	conf, _ := config.GetConfig()
 	dbConf := conf.Database
 	switch dbConf["driver"] {
+	case "postgres":
+		db, err = makePostgreSQLConnection(dbConf)
 	case "sqlite":
 		fallthrough
 	default:
@@ -44,6 +47,13 @@ func makeSQLiteConnection(dbConf map[string]string) (*gorm.DB, error) {
 	return db, err
 }
 
+func makePostgreSQLConnection(dbConf map[string]string) (*gorm.DB, error) {
+	dsn := dbConf["dsn"]
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	return db, err
+}
+
 func migrate(db *gorm.DB) {
 	db.AutoMigrate(&model.Log{})
+	db.AutoMigrate(&model.User{})
 }
