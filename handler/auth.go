@@ -72,7 +72,29 @@ func (el AuthHandler) SignUp(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(200, user)
+	token := helper.GenerateToken(user)
+
+	ctx.JSON(200, Session{
+		Token: token,
+		User: User{
+			Id:       user.Id,
+			Name:     user.Name,
+			Lastname: user.Lastname,
+			Email:    user.Email,
+		},
+	})
+}
+
+type User struct {
+	Id       uint   `json:"id"`
+	Name     string `json:"name"`
+	Lastname string `json:"lastname"`
+	Email    string `json:"email"`
+}
+
+type Session struct {
+	User  User   `json:"user"`
+	Token string `json:"token"`
 }
 
 type SignInEntity struct {
@@ -99,8 +121,8 @@ func (el AuthHandler) SignIn(ctx *gin.Context) {
 	}
 	valid, _, _, _, _ := helper.VerifyPassword(payload.Password)
 	if !valid {
-		ctx.JSON(http.StatusBadRequest, &ResponseError{
-			Code:    StatusBadRequestMessage,
+		ctx.JSON(http.StatusUnauthorized, &ResponseError{
+			Code:    StatusUnauthorizedMessage,
 			Message: "Password is invalid",
 		})
 		return
@@ -131,6 +153,15 @@ func (el AuthHandler) SignIn(ctx *gin.Context) {
 		})
 		return
 	}
+	token := helper.GenerateToken(user)
 
-	ctx.JSON(200, user)
+	ctx.JSON(200, Session{
+		Token: token,
+		User: User{
+			Id:       user.Id,
+			Name:     user.Name,
+			Lastname: user.Lastname,
+			Email:    user.Email,
+		},
+	})
 }

@@ -15,7 +15,8 @@ func Configure() *http.Server {
 	r := gin.Default()
 	tls.Client(&net.TCPConn{}, &tls.Config{})
 
-	handler.AttachAuth(r.Group("auth"))
+	api := r.Group("api")
+	handler.AttachAuth(api.Group("auth"))
 	handler.AttachStatic(r)
 
 	conf, _ := config.GetConfig()
