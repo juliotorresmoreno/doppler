@@ -1,7 +1,9 @@
+const webpack = require('webpack')
 const path = require('path')
 const HTMLWebpackPlugin = require('html-webpack-plugin')
 const Dotenv = require('dotenv-webpack')
 const isDev = process.env.NODE_ENV !== 'production'
+const dotenv = require('dotenv').config({ path: './.env' })
 
 /**
  * @typedef {import('webpack').WebpackOptionsNormalized} WebpackOptionsNormalized
@@ -20,7 +22,9 @@ const configuration = {
     new HTMLWebpackPlugin({
       template: 'src/index.html',
     }),
-    new Dotenv(),
+    new webpack.DefinePlugin({
+      'process.env': JSON.stringify(dotenv.parsed),
+    }),
   ],
   devtool: isDev ? 'source-map' : false,
   mode: isDev ? 'development' : 'production',

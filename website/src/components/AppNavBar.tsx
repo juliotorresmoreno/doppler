@@ -8,30 +8,26 @@ import {
   NavItem,
   NavbarProps,
 } from 'reactstrap'
-import withSession from '../hoc/withSession'
-import { ISession } from '../models/session'
-import { Link } from 'react-router-dom'
-import useSignInCanvas from '../hooks/useSignInForm'
-import useSignUpCanvas from '../hooks/useSignUpForm'
 import useContactForm from '../hooks/useContactForm'
+import { useAppSelector } from '../store/hooks'
+import useSignInForm from '../hooks/useSignInForm'
+import useSignUpForm from '../hooks/useSignUpForm'
+import { Link } from 'react-router-dom'
 
-type _AppNavBarProps = {
-  session: ISession
-} & NavbarProps &
-  React.PropsWithChildren
+type _AppNavBarProps = {} & NavbarProps & React.PropsWithChildren
 
 const _AppNavBar: React.FC<_AppNavBarProps> = ({
   children,
-  session,
   ...navBarProps
 }) => {
+  const session = useAppSelector((state) => state.auth.session)
   const [isOpenCollapse, setIsOpenCollapse] = useState(false)
   const toggleCollapse = useCallback(
     () => setIsOpenCollapse(!isOpenCollapse),
     []
   )
-  const [SignInForm, toggleSignIn] = useSignInCanvas()
-  const [SignUpForm, toggleSignUp] = useSignUpCanvas()
+  const [SignInForm, toggleSignIn] = useSignInForm()
+  const [SignUpForm, toggleSignUp] = useSignUpForm()
   const [ContactForm, toggleContact] = useContactForm()
   const onSignInClick: React.MouseEventHandler = (e) => {
     e.preventDefault()
@@ -54,12 +50,11 @@ const _AppNavBar: React.FC<_AppNavBarProps> = ({
 
       <Navbar light {...navBarProps} expand="md">
         <NavbarBrand href="/">{children}</NavbarBrand>
-
-        <NavbarToggler onClick={toggleCollapse} />
-        <Collapse isOpen={isOpenCollapse} navbar>
-          {!session ? (
-            <>
-              <Nav className="me-auto" navbar>
+        {!session ? (
+          <>
+            <NavbarToggler onClick={toggleCollapse} />
+            <Collapse isOpen={isOpenCollapse} navbar>
+              <Nav navbar>
                 <NavItem>
                   <a className="nav-link" href="" onClick={onSignInClick}>
                     Sign In
@@ -71,20 +66,52 @@ const _AppNavBar: React.FC<_AppNavBarProps> = ({
                   </a>
                 </NavItem>
               </Nav>
-            </>
-          ) : null}
-        </Collapse>
+            </Collapse>
+          </>
+        ) : (
+          <>
+            <NavbarToggler onClick={toggleCollapse} />
+            <Collapse isOpen={isOpenCollapse} navbar>
+              <Nav navbar>
+                <NavItem>
+                  <Link className="nav-link" to="/servers">
+                    Servers
+                  </Link>
+                </NavItem>
+                <NavItem>
+                  <Link className="nav-link" to="/history">
+                    History
+                  </Link>
+                </NavItem>
+                <NavItem>
+                  <Link className="nav-link" to="/organization">
+                    Organization
+                  </Link>
+                </NavItem>
+                <NavItem>
+                  <Link className="nav-link" to="/police">
+                    Police
+                  </Link>
+                </NavItem>
+              </Nav>
+            </Collapse>
+          </>
+        )}
 
         <Navbar>
-          <a className="nav-link" href="/contact" onClick={onContactClick}>
-            Contact
-          </a>
+          <Nav navbar>
+            <NavItem>
+              <a className="nav-link" href="/contact" onClick={onContactClick}>
+                Contact
+              </a>
+            </NavItem>
+          </Nav>
         </Navbar>
       </Navbar>
     </div>
   )
 }
 
-const AppNavBar = withSession(_AppNavBar)
+const AppNavBar = _AppNavBar
 
 export default AppNavBar

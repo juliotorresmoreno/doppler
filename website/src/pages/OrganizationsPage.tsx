@@ -1,19 +1,17 @@
 import React from 'react'
 import PageTemplate from '../layouts/PageTemplate'
 
-const HomePage: React.FC = () => {
+const OrganizationsPage: React.FC = () => {
   const header = {
-    title: 'Home',
+    title: 'Servers',
     description: 'programa de super poderes',
   }
 
   return (
     <>
-      <PageTemplate {...header}>
-
-      </PageTemplate>
+      <PageTemplate {...header}>OrganizationsPage</PageTemplate>
     </>
   )
 }
 
-export default HomePage
+export default OrganizationsPage

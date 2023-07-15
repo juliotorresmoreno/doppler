@@ -18,12 +18,11 @@ let persistor = persistStore(store)
 const Root: React.FC<{}> = () => {
   return (
     <Provider store={store}>
-      {/*<PersistGate persistor={persistor}>*/}
-      <BrowserRouter>
-      
-        <App />
-      </BrowserRouter>
-      {/*</PersistGate>*/}
+      <PersistGate persistor={persistor}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </PersistGate>
     </Provider>
   )
 }

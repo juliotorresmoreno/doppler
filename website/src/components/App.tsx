@@ -3,9 +3,12 @@ import { Route, Routes } from 'react-router-dom'
 import withSession from '../hoc/withSession'
 import { useAppSelector } from '../store/hooks'
 import NotFoundPage from '../pages/NotFound'
-import SignInPage from '../pages/SignInPage'
 import PreHomePage from '../pages/PreHomePage'
-import SignUpPage from '../pages/SignUpPage'
+import HomePage from '../pages/HomePage'
+import ServersPage from '../pages/ServersPage'
+import HistoryPage from '../pages/HistoryPage'
+import OrganizationsPage from '../pages/OrganizationsPage'
+import PolicePage from '../pages/PolicePage'
 
 const _App: React.FC = () => {
   const session = useAppSelector((state: any) => state.auth.session)
@@ -14,14 +17,16 @@ const _App: React.FC = () => {
     <Routes>
       {session ? (
         <>
-          <Route path="/" element={'Home'} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/servers/" element={<ServersPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/organization" element={<OrganizationsPage />} />
+          <Route path="/police" element={<PolicePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </>
       ) : (
         <>
           <Route path="/" element={<PreHomePage />} />
-          <Route path="/sign-in" element={<SignInPage />} />
-          <Route path="/sign-up" element={<SignUpPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </>
       )}

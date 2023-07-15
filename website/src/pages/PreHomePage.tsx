@@ -3,7 +3,6 @@ import PageTemplate from '../layouts/PageTemplate'
 import AppCarousel from '../components/AppCarousel'
 import AppCard from '../components/AppCard'
 import { Col, Row } from 'reactstrap'
-import GoogleLoginButton from '../components/GoogleLoginButton'
 
 const PreHomePage: React.FC = () => {
   const header = {

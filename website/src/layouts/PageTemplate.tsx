@@ -1,7 +1,7 @@
 import React from 'react'
 import Header from '../components/Header'
 import AppNavBar from '../components/AppNavBar'
-import { Col, Container, Row } from 'reactstrap'
+import { Container } from 'reactstrap'
 
 type PageTemplateProps = {
   title: string
@@ -19,17 +19,16 @@ const PageTemplate: React.FC<PageTemplateProps> = ({
   }
 
   return (
-    <>
-      <Container fluid>
-        <AppNavBar>
-          <Header {...header} />
-        </AppNavBar>
+    <Container fluid>
+      <AppNavBar>
+        <h1>Doppler</h1>
+        <Header {...header} />
+      </AppNavBar>
 
-        <Container>
-          <main>{children}</main>
-        </Container>
+      <Container>
+        <main>{children}</main>
       </Container>
-    </>
+    </Container>
   )
 }
 

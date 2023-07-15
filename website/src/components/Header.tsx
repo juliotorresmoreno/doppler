@@ -10,7 +10,6 @@ const Header: React.FC<HeaderProps> = ({ title, description }) => {
   return (
     <>
       <header>
-        <h1>{title}</h1>
         <Helmet>
           {title && <title>{title} | SpecialistTalk</title>}
           {description && <meta name="description" content={description} />}
