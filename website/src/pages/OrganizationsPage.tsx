@@ -7,11 +7,7 @@ const OrganizationsPage: React.FC = () => {
     description: 'programa de super poderes',
   }
 
-  return (
-    <>
-      <PageTemplate {...header}>OrganizationsPage</PageTemplate>
-    </>
-  )
+  return <PageTemplate {...header}>OrganizationsPage</PageTemplate>
 }
 
 export default OrganizationsPage

@@ -14,11 +14,7 @@ const ErrorPage: React.FC<ErrorPageProps> = ({ error }) => {
     description: 'programa de super poderes',
   }
 
-  return (
-    <>
-      <PageTemplate {...header}>NotFoundPage</PageTemplate>
-    </>
-  )
+  return <PageTemplate {...header}>NotFoundPage</PageTemplate>
 }
 
 export default ErrorPage

@@ -18,10 +18,10 @@ import { signIn } from '../features/auth'
 const useSignInForm = (): [React.FC, () => void] => {
   const [isOpen, setIsOpen] = useState(false)
   const toggle = () => setIsOpen(!isOpen)
-  const appDispatch = useAppDispatch()
-  const { error, isLoading } = useAppSelector((state) => state.auth)
 
   const Component: React.FC = () => {
+    const appDispatch = useAppDispatch()
+    const { error, isLoading } = useAppSelector((state) => state.auth)
     const email = useInputForm(config.testUserEmail)
     const password = useInputForm(config.testUserPassword)
     const onSubmit: React.FormEventHandler<HTMLFormElement> = (evt) => {
@@ -31,9 +31,7 @@ const useSignInForm = (): [React.FC, () => void] => {
           email: email.value,
           password: password.value,
         })
-      ).then(function () {
-        toggle()
-      })
+      )
     }
 
     return (

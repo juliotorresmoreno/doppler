@@ -9,10 +9,11 @@ import {
   NavbarProps,
 } from 'reactstrap'
 import useContactForm from '../hooks/useContactForm'
-import { useAppSelector } from '../store/hooks'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
 import useSignInForm from '../hooks/useSignInForm'
 import useSignUpForm from '../hooks/useSignUpForm'
 import { Link } from 'react-router-dom'
+import authSlice from '../features/auth'
 
 type _AppNavBarProps = {} & NavbarProps & React.PropsWithChildren
 
@@ -22,6 +23,7 @@ const _AppNavBar: React.FC<_AppNavBarProps> = ({
 }) => {
   const session = useAppSelector((state) => state.auth.session)
   const [isOpenCollapse, setIsOpenCollapse] = useState(false)
+  const appDispatch = useAppDispatch()
   const toggleCollapse = useCallback(
     () => setIsOpenCollapse(!isOpenCollapse),
     []
@@ -40,6 +42,10 @@ const _AppNavBar: React.FC<_AppNavBarProps> = ({
   const onContactClick: React.MouseEventHandler = (e) => {
     e.preventDefault()
     toggleContact()
+  }
+
+  const onLogoutClick = () => {
+    appDispatch(authSlice.actions.logout())
   }
 
   return (
@@ -100,11 +106,23 @@ const _AppNavBar: React.FC<_AppNavBarProps> = ({
 
         <Navbar>
           <Nav navbar>
-            <NavItem>
-              <a className="nav-link" href="/contact" onClick={onContactClick}>
-                Contact
-              </a>
-            </NavItem>
+            {!session ? (
+              <NavItem>
+                <a
+                  className="nav-link"
+                  href=""
+                  onClick={onContactClick}
+                >
+                  Contact
+                </a>
+              </NavItem>
+            ) : (
+              <NavItem>
+                <a href="/" className="nav-link" onClick={onLogoutClick}>
+                  Logout
+                </a>
+              </NavItem>
+            )}
           </Nav>
         </Navbar>
       </Navbar>

@@ -31,7 +31,6 @@ func VerifyPassword(s string) (valid, sevenOrMore, number, upper, special bool) 
 	return
 }
 
-// GeneratePassword
 func GeneratePassword(password string) (string, error) {
 	s, err := bcrypt.GenerateFromPassword(
 		[]byte(password),

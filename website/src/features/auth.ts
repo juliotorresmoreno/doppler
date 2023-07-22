@@ -1,7 +1,6 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import { ISession } from '../models/session'
 import config from '../config'
-import { store } from '../store'
 
 export type AuthState = {
   session: ISession | null
@@ -14,12 +13,15 @@ const initialState: AuthState = {
   isLoading: false,
   error: null,
 }
+
 export const signIn = createAsyncThunk('auth/sign-in', async (payload: any) => {
   const res = await fetch(config.baseUrl + '/auth/sign-in', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
     },
+    credentials: 'same-origin',
+    mode: 'cors',
     body: JSON.stringify(payload),
   })
   const data = await res.json()

@@ -7,11 +7,7 @@ const PolicePage: React.FC = () => {
     description: 'programa de super poderes',
   }
 
-  return (
-    <>
-      <PageTemplate {...header}>PolicePage</PageTemplate>
-    </>
-  )
+  return <PageTemplate {...header}>PolicePage</PageTemplate>
 }
 
 export default PolicePage

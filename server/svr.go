@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/juliotorresmoreno/doppler/config"
 	"github.com/juliotorresmoreno/doppler/handler"
+	"github.com/juliotorresmoreno/doppler/middleware"
 )
 
 func Configure() *http.Server {
@@ -15,6 +16,7 @@ func Configure() *http.Server {
 	r := gin.Default()
 	tls.Client(&net.TCPConn{}, &tls.Config{})
 
+	r.Use(middleware.Cors)
 	api := r.Group("api")
 	handler.AttachAuth(api.Group("auth"))
 	handler.AttachStatic(r)

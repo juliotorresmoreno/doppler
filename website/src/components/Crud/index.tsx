@@ -20,7 +20,7 @@ const Crud: React.FC<CrudProps> = ({ columns }) => {
           <tr>
             {columns.map((column) => (
               <Fragment key={column.code}>
-                <th style={column.styles}>{column.title}</th>
+                <td style={column.styles}>{column.title}</td>
               </Fragment>
             ))}
           </tr>

@@ -3,6 +3,8 @@ import {
   CardBody as BSCardBody,
   Input as BSInput,
   Button as BSButton,
+  ModalBody as BSModalBody,
+  NavItem as BSNavItem,
 } from 'reactstrap'
 import { BsPlusCircleFill } from 'react-icons/bs'
 import styled from 'styled-components'
@@ -22,6 +24,19 @@ export const PlusCircleFill = styled(BsPlusCircleFill).attrs({
 
 export const Button = styled(BSButton)`
   width: 100px;
+`
+
+export const ModalBody = styled(BSModalBody)`
+  height: 400;
+`
+
+export const TabPaneBody = styled.div`
+  padding-top: 10px;
+  height: 415px;
+`
+
+export const NavItem = styled(BSNavItem)`
+  cursor: pointer;
 `
 
 export const TextArea = styled((props) => (

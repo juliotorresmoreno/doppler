@@ -7,13 +7,7 @@ const HomePage: React.FC = () => {
     description: 'programa de super poderes',
   }
 
-  return (
-    <>
-      <PageTemplate {...header}>
-
-      </PageTemplate>
-    </>
-  )
+  return <PageTemplate {...header}></PageTemplate>
 }
 
 export default HomePage

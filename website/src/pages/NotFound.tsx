@@ -7,11 +7,7 @@ const NotFoundPage: React.FC = () => {
     description: 'programa de super poderes',
   }
 
-  return (
-    <>
-      <PageTemplate {...header}>NotFoundPage</PageTemplate>
-    </>
-  )
+  return <PageTemplate {...header}>NotFoundPage</PageTemplate>
 }
 
 export default NotFoundPage
