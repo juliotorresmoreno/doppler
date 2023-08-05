@@ -200,7 +200,7 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 
 	io.Copy(w, resp.Body)
 
-	h.Logger.Register(req.Method, resp.StatusCode, w.Header(), nil)
+	h.Logger.Register(req.Host, req.Method, resp.StatusCode)
 }
 
 func (h *Proxy) HandleConnect(w http.ResponseWriter, r *http.Request) {
@@ -223,14 +223,14 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	hijacker, ok := sw.(http.Hijacker)
 	if !ok {
 		http.Error(sw, "Hijacking not supported", http.StatusInternalServerError)
-		h.Logger.Register("CONNECT", http.StatusInternalServerError, w.Header(), nil)
+		h.Logger.Register(r.Host, "CONNECT", http.StatusInternalServerError)
 		return
 	}
 
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(sw, err.Error(), http.StatusServiceUnavailable)
-		h.Logger.Register("CONNECT", http.StatusInternalServerError, w.Header(), nil)
+		h.Logger.Register(r.Host, "CONNECT", http.StatusInternalServerError)
 		return
 	}
 
@@ -247,7 +247,7 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	}()
 	wg.Wait()
 
-	h.Logger.Register("CONNECT", http.StatusOK, w.Header(), nil)
+	h.Logger.Register(r.Host, "CONNECT", http.StatusOK)
 }
 
 func copyHeader(dst, src http.Header) {

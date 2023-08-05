@@ -1,28 +1,22 @@
 package utils
 
 import (
-	"bytes"
-	"fmt"
-	"net/http"
+	"log"
 
 	"github.com/juliotorresmoreno/doppler/config"
 )
 
 type Logger interface {
-	Register(method string, status int, header http.Header, body *bytes.Buffer)
+	Register(url, method string, status int)
 }
 
 type LoggerBD struct {
 }
 
-func (el *LoggerBD) Register(method string, status int, header http.Header, body *bytes.Buffer) {
-	var content = ""
-	if body != nil {
-		content = body.String()
-	}
+func (el *LoggerBD) Register(url, method string, status int) {
 	conf, _ := config.GetConfig()
 	if !conf.Logger {
 		return
 	}
-	fmt.Println(method, status, header, content)
+	log.Println(method, url, status)
 }

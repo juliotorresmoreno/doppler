@@ -17,8 +17,10 @@ func Configure() *http.Server {
 	tls.Client(&net.TCPConn{}, &tls.Config{})
 
 	r.Use(middleware.Cors)
+	r.Use(middleware.Session)
 	api := r.Group("api")
 	handler.AttachAuth(api.Group("auth"))
+	handler.AttachServer(api.Group("server"))
 	handler.AttachStatic(r)
 
 	conf, _ := config.GetConfig()

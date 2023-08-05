@@ -11,7 +11,6 @@ type Log struct {
 	Method    string
 	Url       string
 	Body      string
-	Header    string
 	CreatedAt time.Time `gorm:"autoUpdateTime:true"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime:true"`
 	DeletedAt time.Time `gorm:"autoUpdateTime:true"`
