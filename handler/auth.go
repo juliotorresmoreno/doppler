@@ -57,13 +57,13 @@ func (el AuthHandler) SignUp(ctx *gin.Context) {
 		})
 		return
 	}
-	user := new(model.User)
-	user.Name = payload.Name
-	user.Lastname = payload.Lastname
-	user.Email = payload.Email
-	user.Password, _ = helper.GeneratePassword(payload.Password)
+	data := new(model.User)
+	data.Name = payload.Name
+	data.Lastname = payload.Lastname
+	data.Email = payload.Email
+	data.Password, _ = helper.GeneratePassword(payload.Password)
 
-	tx := conn.Save(user)
+	tx := conn.Save(data)
 	if tx.Error != nil {
 		ctx.JSON(http.StatusBadRequest, &ResponseError{
 			Code:    StatusBadRequestMessage,
@@ -72,15 +72,15 @@ func (el AuthHandler) SignUp(ctx *gin.Context) {
 		return
 	}
 
-	token := helper.GenerateToken(user)
+	token := helper.GenerateToken(data)
 
 	ctx.JSON(200, Session{
 		Token: token,
-		User: User{
-			Id:       user.Id,
-			Name:     user.Name,
-			Lastname: user.Lastname,
-			Email:    user.Email,
+		User: &User{
+			Id:       data.Id,
+			Name:     data.Name,
+			Lastname: data.Lastname,
+			Email:    data.Email,
 		},
 	})
 }
@@ -93,7 +93,7 @@ type User struct {
 }
 
 type Session struct {
-	User  User   `json:"user"`
+	User  *User  `json:"user"`
 	Token string `json:"token"`
 }
 
@@ -157,7 +157,7 @@ func (el AuthHandler) SignIn(ctx *gin.Context) {
 
 	ctx.JSON(200, Session{
 		Token: token,
-		User: User{
+		User: &User{
 			Id:       user.Id,
 			Name:     user.Name,
 			Lastname: user.Lastname,

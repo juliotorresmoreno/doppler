@@ -1,11 +1,16 @@
 package db
 
 import (
+	"log"
+	"os"
+	"time"
+
 	"github.com/juliotorresmoreno/doppler/config"
 	"github.com/juliotorresmoreno/doppler/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var db *gorm.DB
@@ -50,10 +55,24 @@ func makeSQLiteConnection(dbConf map[string]string) (*gorm.DB, error) {
 func makePostgreSQLConnection(dbConf map[string]string) (*gorm.DB, error) {
 	dsn := dbConf["dsn"]
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             time.Second,
+			LogLevel:                  logger.Silent,
+			IgnoreRecordNotFoundError: true,
+			ParameterizedQueries:      true,
+			Colorful:                  false,
+		},
+	)
+	db.Logger = newLogger
+
 	return db, err
 }
 
 func migrate(db *gorm.DB) {
 	db.AutoMigrate(&model.Log{})
 	db.AutoMigrate(&model.User{})
+	db.AutoMigrate(&model.Server{})
 }

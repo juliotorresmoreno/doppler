@@ -5,6 +5,13 @@ type ResponseError struct {
 	Message string `json:"message"`
 }
 
+type ResponseData struct {
+	Data   interface{} `json:"data"`
+	Limit  int         `json:"limit"`
+	Offset int         `json:"offset"`
+	Total  int64       `json:"total"`
+}
+
 var StatusUnauthorizedMessage = "Unauthorized"
 var StatusBadRequestMessage = "Bad Request"
 var StatusInternalServerErrorMessage = "Internal Server Error"

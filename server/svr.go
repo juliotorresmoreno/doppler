@@ -20,7 +20,7 @@ func Configure() *http.Server {
 	r.Use(middleware.Session)
 	api := r.Group("api")
 	handler.AttachAuth(api.Group("auth"))
-	handler.AttachServer(api.Group("server"))
+	handler.AttachServer(api.Group("servers"))
 	handler.AttachStatic(r)
 
 	conf, _ := config.GetConfig()

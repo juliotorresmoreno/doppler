@@ -14,3 +14,7 @@ type User struct {
 	UpdatedAt time.Time `                   json:"-"`
 	DeletedAt time.Time `gorm:"index"       json:"-"`
 }
+
+func (u User) TableName() string {
+	return "users"
+}

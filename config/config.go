@@ -12,6 +12,7 @@ import (
 )
 
 type Config struct {
+	Limit    int               `yaml:"limit"`
 	Addr     string            `yaml:"addr"`
 	Logger   bool              `yaml:"logger"`
 	Database map[string]string `yaml:"database"`
