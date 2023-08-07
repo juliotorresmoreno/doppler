@@ -1,6 +1,8 @@
 package model
 
-import "time"
+import (
+	"time"
+)
 
 type Server struct {
 	Id          uint      `gorm:""                   json:"id"`
@@ -8,7 +10,7 @@ type Server struct {
 	IpAddress   string    `gorm:""                   json:"ip_address"`
 	Description string    `gorm:"text"               json:"description"`
 	OwnerID     uint      `gorm:""                   json:"-"`
-	Owner       User      `gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"      json:"owner"`
+	Owner       User      `gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"owner"`
 	CreatedAt   time.Time `                          json:"-"`
 	UpdatedAt   time.Time `                          json:"-"`
 	DeletedAt   time.Time `gorm:"index"              json:"-"`
