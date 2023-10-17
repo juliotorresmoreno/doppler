@@ -1,0 +1,6 @@
+addr: :5000
+logger: true
+database:
+  driver: postgres
+  dsn: 
+limit: 10

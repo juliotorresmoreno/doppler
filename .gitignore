@@ -3,7 +3,8 @@ node_modules/
 ./package-lock.json
 .env
 vendor
-certs/*
+certs
 http
 config.yml
 .vercel
+bin

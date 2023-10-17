@@ -1,0 +1,33 @@
+[Unit]
+Description=Advanced Proxy Logger
+After=network.target
+Documentation=https://github.com/juliotorresmoreno/doppler/blob/master/README.md
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/doppler -c /etc/doppler/config.yml
+PIDFile=/run/redis/doppler.pid
+TimeoutStopSec=0
+Restart=always
+User=doppler
+Group=nogroup
+
+UMask=007
+ReadOnlyDirectories=/
+ReadWritePaths=-/var/log/doppler
+ReadWritePaths=-/var/run/doppler
+
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SETGID CAP_SETUID CAP_SYS_RESOURCE
+MemoryDenyWriteExecute=true
+ProtectKernelModules=false
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectSystem=true
+
+[Install]
+WantedBy=multi-user.target
+Alias=doppler.service
