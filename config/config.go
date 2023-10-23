@@ -12,10 +12,12 @@ import (
 )
 
 type Config struct {
-	Limit    int               `yaml:"limit"`
-	Addr     string            `yaml:"addr"`
-	Logger   bool              `yaml:"logger"`
-	Database map[string]string `yaml:"database"`
+	Limit        int               `yaml:"limit"`
+	Addr         string            `yaml:"addr"`
+	Logger       bool              `yaml:"logger"`
+	Database     map[string]string `yaml:"database"`
+	ReadTimeout  int               `yaml:"read_timeout"`
+	WriteTimeout int               `yaml:"write_timeout"`
 }
 
 var config interface{}
@@ -39,7 +41,14 @@ func GetConfig() (Config, error) {
 	if configPath == "" {
 		getConfigArgs()
 	}
-	result := Config{}
+	result := Config{
+		Addr:         ":4080",
+		Limit:        10,
+		Logger:       true,
+		ReadTimeout:  30,
+		WriteTimeout: 120,
+	}
+
 	f, err := os.Open(configPath)
 	if err != nil {
 		return result, err

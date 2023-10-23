@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/juliotorresmoreno/doppler/config"
@@ -26,8 +27,10 @@ func Configure() *http.Server {
 	conf, _ := config.GetConfig()
 
 	server := &http.Server{
-		Addr:    conf.Addr,
-		Handler: handler.ProxyHandler(r),
+		Addr:         conf.Addr,
+		Handler:      handler.ProxyHandler(r),
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second,
 	}
 	return server
 }
