@@ -233,18 +233,8 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wg := sync.WaitGroup{}
-
-	wg.Add(2)
-	go func() {
-		utils.Transfer(destConn, clientConn)
-		wg.Done()
-	}()
-	go func() {
-		utils.Transfer(clientConn, destConn)
-		wg.Done()
-	}()
-	wg.Wait()
+	go io.Copy(destConn, clientConn)
+	go utils.CopyWithRateLimit(clientConn, destConn, 100)
 
 	h.Logger.Register(r.Host, "CONNECT", http.StatusOK)
 }
