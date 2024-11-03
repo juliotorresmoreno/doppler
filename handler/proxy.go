@@ -78,17 +78,17 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	credentials := req.Header.Get("Authorization")
-	if len(credentials) < 6 {
-		credentials = req.Header.Get("Proxy-Authorization")
-	}
+	// credentials := req.Header.Get("Authorization")
+	// if len(credentials) < 6 {
+	// 	credentials = req.Header.Get("Proxy-Authorization")
+	// }
 
-	if len(credentials) > 6 {
-		if err := h.BasicAuth(credentials); err != nil {
-			h.AuthRequired(res, req)
-			return
-		}
-	}
+	// if len(credentials) > 6 {
+	// 	if err := h.BasicAuth(credentials); err != nil {
+	// 		h.AuthRequired(res, req)
+	// 		return
+	// 	}
+	// }
 
 	switch protocol {
 	case "http":
