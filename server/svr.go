@@ -19,8 +19,8 @@ func Configure() *http.Server {
 	server := &http.Server{
 		Addr:         conf.Addr,
 		Handler:      handler.ProxyHandler(r),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 120 * time.Second,
+		ReadTimeout:  time.Duration(conf.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(conf.WriteTimeout) * time.Second,
 	}
 	return server
 }

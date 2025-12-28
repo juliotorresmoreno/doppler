@@ -2,7 +2,7 @@ package config
 
 import (
 	"flag"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"path"
@@ -63,7 +63,7 @@ func GetConfig() (Config, error) {
 	if err != nil {
 		return result, err
 	}
-	buff, err := ioutil.ReadAll(f)
+	buff, err := io.ReadAll(f)
 	if err != nil {
 		return result, err
 	}
