@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/mux"
 	"github.com/juliotorresmoreno/doppler/config"
 	"github.com/juliotorresmoreno/doppler/handler"
@@ -12,7 +11,6 @@ import (
 )
 
 func Configure() *http.Server {
-	gin.SetMode(gin.DebugMode)
 	r := mux.NewRouter()
 	r.Use(middleware.Cors)
 
