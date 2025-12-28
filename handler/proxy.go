@@ -92,7 +92,8 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go io.Copy(destConn, clientConn)
-	go utils.CopyWithRateLimit(clientConn, destConn, 100)
+	//go utils.CopyWithRateLimit(clientConn, destConn, 5000)
+	go io.Copy(clientConn, destConn)
 
 	h.Logger.Register(r.Host, "CONNECT", http.StatusOK)
 }
