@@ -14,9 +14,7 @@ import (
 func Configure() *http.Server {
 	gin.SetMode(gin.DebugMode)
 	r := mux.NewRouter()
-	r.Use(func(next http.Handler) http.Handler {
-		return middleware.Cors(next)
-	})
+	r.Use(middleware.Cors)
 
 	conf, _ := config.GetConfig()
 
