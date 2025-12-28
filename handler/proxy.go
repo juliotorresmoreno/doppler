@@ -1,42 +1,18 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
+	"github.com/juliotorresmoreno/doppler/config"
 	"github.com/juliotorresmoreno/doppler/helper"
 	"github.com/juliotorresmoreno/doppler/internal/utils"
 )
-
-var clients = sync.Map{}
-
-type Client struct {
-	Conn     *websocket.Conn
-	Protocol string
-	Domain   string
-	Reverse  string
-	Mutex    *sync.Mutex
-	handlers map[string]func(data interface{})
-}
-
-func (c *Client) RegisterHandler(id string, fn func(data interface{})) {
-	c.handlers[id] = fn
-}
-
-type Action struct {
-	Command string
-	Payload map[string]interface{}
-	Conn    *websocket.Conn
-}
 
 type Proxy struct {
 	Fallback http.Handler
@@ -53,54 +29,40 @@ func ProxyHandler(fallback http.Handler) http.Handler {
 }
 
 func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
+	config, err := config.GetConfig()
+	if err != nil {
+		http.Error(res, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	isRequestToProxy, protocol := utils.IsRequestToProxy(req)
 	if !isRequestToProxy {
-		if _, ok := clients.Load(req.Header.Get("Host")); ok {
-			h.HandleReverseHTTP(res, req, req.Header.Get("Host"))
-			return
-		}
 		h.Fallback.ServeHTTP(res, req)
 		return
 	}
 
-	switch protocol {
-	case "http":
-		if _, ok := clients.Load(req.URL.Host); ok {
-			h.HandleReverseHTTP(res, req, req.URL.Host)
+	// Authentication
+	if config.Auth.Enabled {
+		authHeader := req.Header.Get("Proxy-Authorization")
+		err := h.BasicAuth(authHeader)
+		if err != nil {
+			h.AuthRequired(res, req)
 			return
 		}
+
+		req.Header.Del("Proxy-Authorization")
+		req.Header.Del("Proxy-Connection")
+	}
+
+	switch protocol {
+	case "http":
 		h.HandleHTTP(res, req)
 	case "connect":
 		h.HandleConnect(res, req)
 	}
 }
 
-func (h *Proxy) HandleReverseHTTP(res http.ResponseWriter, req *http.Request, alias string) {
-	_client, _ := clients.Load(alias)
-	client := _client.(*Client)
-	client.Mutex.Lock()
-	defer client.Mutex.Unlock()
-	buff := bytes.NewBufferString("")
-	io.Copy(buff, req.Body)
-	data := make([]byte, base64.StdEncoding.EncodedLen(buff.Len()))
-
-	base64.StdEncoding.Encode(data, buff.Bytes())
-	client.Conn.WriteJSON(map[string]interface{}{
-		"command": "request",
-		"payload": map[string]interface{}{
-			"uuid":   uuid.New(),
-			"method": req.Method,
-			"url":    client.Protocol + "://" + client.Reverse + req.URL.Path,
-			"header": req.Header,
-			"body":   string(data),
-		},
-	})
-	time.Sleep(time.Minute)
-}
-
 func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
-	req.Header.Del("Proxy-Authorization")
-	req.Header.Del("Proxy-Connection")
 	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -169,6 +131,11 @@ func (h *Proxy) AuthRequired(w http.ResponseWriter, r *http.Request) {
 
 // basicAuth .
 func (h *Proxy) BasicAuth(credentials string) error {
+	config, err := config.GetConfig()
+	if err != nil {
+		return errors.New("Unauthorized")
+	}
+
 	if len(credentials) < 6 {
 		return errors.New("Unauthorized")
 	}
@@ -184,7 +151,7 @@ func (h *Proxy) BasicAuth(credentials string) error {
 	password := splitData[1]
 
 	// TODO: Validate username and password
-	if username == "admin" && password == "admin" {
+	if user, ok := config.Auth.Users[username]; ok && user == password {
 		return nil
 	}
 

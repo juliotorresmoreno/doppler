@@ -11,7 +11,18 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type Credentials struct {
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+}
+
+type Auth struct {
+	Enabled bool              `yaml:"enabled"`
+	Users   map[string]string `yaml:"users"`
+}
+
 type Config struct {
+	Auth         Auth   `yaml:"auth"`
 	Limit        int    `yaml:"limit"`
 	Addr         string `yaml:"addr"`
 	Logger       bool   `yaml:"logger"`
