@@ -1,23 +1,24 @@
 package middleware
 
-import (
-	"github.com/gin-gonic/gin"
-)
+import "net/http"
 
-func Cors(ctx *gin.Context) {
-	origin := ctx.Request.Header.Get("Origin")
-	if origin == "" {
-		origin = "*"
-	}
+func Cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		origin := req.Header.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
 
-	ctx.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-	ctx.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-	ctx.Writer.Header().Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-	ctx.Writer.Header().Set("Access-Control-Allow-Headers", "X-Requested-With,Content-Type,Cache-Control")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "X-Requested-With,Content-Type,Cache-Control")
 
-	if ctx.Request.Method == "OPTIONS" {
-		ctx.Writer.WriteHeader(200)
-		ctx.Writer.Flush()
-		return
-	}
+		if req.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			w.(http.Flusher).Flush()
+			return
+		}
+		next.ServeHTTP(w, req)
+	})
 }

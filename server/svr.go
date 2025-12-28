@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/mux"
 	"github.com/juliotorresmoreno/doppler/config"
 	"github.com/juliotorresmoreno/doppler/handler"
 	"github.com/juliotorresmoreno/doppler/middleware"
@@ -12,14 +13,10 @@ import (
 
 func Configure() *http.Server {
 	gin.SetMode(gin.DebugMode)
-	r := gin.Default()
-
-	r.Use(middleware.Cors)
-	r.Use(middleware.Session)
-	api := r.Group("api")
-	handler.AttachAuth(api.Group("auth"))
-	handler.AttachServer(api.Group("servers"))
-	handler.AttachStatic(r)
+	r := mux.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return middleware.Cors(next)
+	})
 
 	conf, _ := config.GetConfig()
 

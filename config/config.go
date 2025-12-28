@@ -12,12 +12,11 @@ import (
 )
 
 type Config struct {
-	Limit        int               `yaml:"limit"`
-	Addr         string            `yaml:"addr"`
-	Logger       bool              `yaml:"logger"`
-	Database     map[string]string `yaml:"database"`
-	ReadTimeout  int               `yaml:"read_timeout"`
-	WriteTimeout int               `yaml:"write_timeout"`
+	Limit        int    `yaml:"limit"`
+	Addr         string `yaml:"addr"`
+	Logger       bool   `yaml:"logger"`
+	ReadTimeout  int    `yaml:"read_timeout"`
+	WriteTimeout int    `yaml:"write_timeout"`
 }
 
 var config interface{}

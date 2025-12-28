@@ -3,9 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -19,7 +17,6 @@ import (
 	"github.com/juliotorresmoreno/doppler/internal/utils"
 )
 
-var sockets = sync.Map{}
 var clients = sync.Map{}
 
 type Client struct {
@@ -44,25 +41,13 @@ type Action struct {
 type Proxy struct {
 	Fallback http.Handler
 	Logger   utils.Logger
-	Upgrader *websocket.Upgrader
-	command  chan *Action
 }
 
 func ProxyHandler(fallback http.Handler) http.Handler {
-	var upgrader = &websocket.Upgrader{
-		HandshakeTimeout:  1 * time.Minute,
-		EnableCompression: true,
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}
 	p := &Proxy{
 		Fallback: fallback,
 		Logger:   &utils.LoggerBD{},
-		Upgrader: upgrader,
-		command:  make(chan *Action),
 	}
-	go p.HandleCMD()
 
 	return http.HandlerFunc(p.Handle)
 }
@@ -78,18 +63,6 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// credentials := req.Header.Get("Authorization")
-	// if len(credentials) < 6 {
-	// 	credentials = req.Header.Get("Proxy-Authorization")
-	// }
-
-	// if len(credentials) > 6 {
-	// 	if err := h.BasicAuth(credentials); err != nil {
-	// 		h.AuthRequired(res, req)
-	// 		return
-	// 	}
-	// }
-
 	switch protocol {
 	case "http":
 		if _, ok := clients.Load(req.URL.Host); ok {
@@ -97,40 +70,8 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 			return
 		}
 		h.HandleHTTP(res, req)
-	case "websocket":
-		h.HandleExpose(res, req)
 	case "connect":
-
 		h.HandleConnect(res, req)
-	}
-}
-
-func (h *Proxy) HandleExpose(res http.ResponseWriter, req *http.Request) {
-	ws, err := h.Upgrader.Upgrade(res, req, nil)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	defer ws.Close()
-	for {
-		_, data, err := ws.ReadMessage()
-		if err != nil {
-			break
-		}
-		message := map[string]interface{}{}
-		json.NewDecoder(bytes.NewBuffer(data)).Decode(&message)
-		if _, ok := message["command"]; ok {
-			h.command <- &Action{
-				Command: message["command"].(string),
-				Payload: message["payload"].(map[string]interface{}),
-				Conn:    ws,
-			}
-		}
-	}
-	h.command <- &Action{
-		Command: "close",
-		Conn:    ws,
 	}
 }
 
@@ -155,51 +96,6 @@ func (h *Proxy) HandleReverseHTTP(res http.ResponseWriter, req *http.Request, al
 		},
 	})
 	time.Sleep(time.Minute)
-}
-
-func (h *Proxy) HandleCMD() {
-	for {
-		action := <-h.command
-
-		switch action.Command {
-		case "register":
-			payload := action.Payload
-			alias := payload["alias"].(string)
-			expose := payload["expose"].(string)
-			protocol := payload["protocol"].(string)
-
-			if _, ok := clients.Load(alias); ok {
-				action.Conn.WriteJSON(map[string]interface{}{
-					"event": "unauthorized",
-				})
-				action.Conn.Close()
-				continue
-			}
-
-			sockets.Store(action.Conn, alias)
-			func() {
-				mutex := &sync.Mutex{}
-				mutex.Lock()
-				defer mutex.Unlock()
-
-				client, _ := clients.LoadOrStore(alias, &Client{
-					Conn:     action.Conn,
-					Domain:   alias,
-					Reverse:  expose,
-					Protocol: protocol,
-					Mutex:    mutex,
-				})
-				client.(*Client).Conn.WriteJSON(map[string]interface{}{
-					"event": "registered",
-				})
-			}()
-		case "close":
-			alias, ok := sockets.LoadAndDelete(action.Conn)
-			if ok {
-				clients.Delete(alias)
-			}
-		}
-	}
 }
 
 func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
