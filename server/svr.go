@@ -1,8 +1,6 @@
 package server
 
 import (
-	"crypto/tls"
-	"net"
 	"net/http"
 	"time"
 
@@ -15,7 +13,6 @@ import (
 func Configure() *http.Server {
 	gin.SetMode(gin.DebugMode)
 	r := gin.Default()
-	tls.Client(&net.TCPConn{}, &tls.Config{})
 
 	r.Use(middleware.Cors)
 	r.Use(middleware.Session)
