@@ -64,22 +64,72 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 }
 
 func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
-	resp, err := http.DefaultTransport.RoundTrip(req)
+	if isWebSocket(req) {
+		h.handleWebSocket(w, req)
+		return
+	}
+
+	resp, err := h.transport().RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	defer resp.Body.Close()
+
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-
 	io.Copy(w, resp.Body)
 
 	h.Logger.Register(req.Host, req.Method, resp.StatusCode)
 }
 
-func (h *Proxy) HandleConnect(w http.ResponseWriter, r *http.Request) {
-	destConn, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
+func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request) {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "hijack not supported", http.StatusInternalServerError)
+		return
+	}
+
+	clientConn, _, err := hj.Hijack()
+	if err != nil {
+		return
+	}
+
+	var hostPort string
+	if strings.Contains(req.Host, ":") {
+		hostPort = req.Host
+	} else {
+		hostPort = req.Host + ":80"
+	}
+	targetConn, err := net.Dial("tcp", hostPort)
+	if err != nil {
+		clientConn.Close()
+		return
+	}
+
+	req.Write(targetConn)
+
+	go io.Copy(targetConn, clientConn)
+	go io.Copy(clientConn, targetConn)
+}
+
+func (h *Proxy) transport() *http.Transport {
+	return &http.Transport{
+		Proxy:              nil,
+		DisableCompression: false,
+		ForceAttemptHTTP2:  true,
+		MaxIdleConns:       100,
+		IdleConnTimeout:    90 * time.Second,
+	}
+}
+
+func isWebSocket(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("Connection"), "Upgrade") &&
+		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+}
+
+func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
+	destConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -88,7 +138,7 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	clientConn, err := helper.GetHijack(w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		h.Logger.Register(r.Host, "CONNECT", http.StatusInternalServerError)
+		h.Logger.Register(req.Host, "CONNECT", http.StatusInternalServerError)
 		return
 	}
 
@@ -96,7 +146,7 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	//go utils.CopyWithRateLimit(clientConn, destConn, 5000)
 	go io.Copy(clientConn, destConn)
 
-	h.Logger.Register(r.Host, "CONNECT", http.StatusOK)
+	h.Logger.Register(req.Host, "CONNECT", http.StatusOK)
 }
 
 const authenticationRequiredHTML = `
