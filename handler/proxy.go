@@ -47,6 +47,7 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 		err := h.BasicAuth(authHeader)
 		if err != nil {
 			h.AuthRequired(res, req)
+			h.Logger.Register(req.Host, req.Method, http.StatusProxyAuthRequired)
 			return
 		}
 
