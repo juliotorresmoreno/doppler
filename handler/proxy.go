@@ -203,7 +203,8 @@ func (h *Proxy) BasicAuth(credentials string) error {
 	password := splitData[1]
 
 	// TODO: Validate username and password
-	if user, ok := config.Auth.Users[username]; ok && user == password {
+	user, ok := config.Auth.Users[username]
+	if ok && user == password {
 		return nil
 	}
 
