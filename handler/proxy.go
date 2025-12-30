@@ -16,41 +16,38 @@ import (
 
 type Proxy struct {
 	Fallback http.Handler
-	Logger   utils.Logger
+	Logger   *utils.LoggerBD
 }
 
 func ProxyHandler(fallback http.Handler) http.Handler {
 	p := &Proxy{
 		Fallback: fallback,
-		Logger:   &utils.LoggerBD{},
+		Logger:   utils.NewLogger(),
 	}
-
 	return http.HandlerFunc(p.Handle)
 }
 
 func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
-	config, err := config.GetConfig()
+	conf, err := config.GetConfig()
 	if err != nil {
 		http.Error(res, "Internal Server Error", http.StatusInternalServerError)
+		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusInternalServerError)
 		return
 	}
 
-	isRequestToProxy, protocol := utils.IsRequestToProxy(req)
-	if !isRequestToProxy {
+	isProxyReq, protocol := utils.IsRequestToProxy(req)
+	if !isProxyReq {
 		h.Fallback.ServeHTTP(res, req)
 		return
 	}
 
-	// Authentication
-	if config.Auth.Enabled {
+	if conf.Auth.Enabled {
 		authHeader := req.Header.Get("Proxy-Authorization")
-		err := h.BasicAuth(authHeader)
-		if err != nil {
+		if err := h.BasicAuth(authHeader); err != nil {
 			h.AuthRequired(res, req)
-			h.Logger.Register(req.Host, req.Method, http.StatusProxyAuthRequired)
+			h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusProxyAuthRequired)
 			return
 		}
-
 		req.Header.Del("Proxy-Authorization")
 		req.Header.Del("Proxy-Connection")
 	}
@@ -60,6 +57,9 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 		h.HandleHTTP(res, req)
 	case "connect":
 		h.HandleConnect(res, req)
+	default:
+		http.Error(res, "Unsupported protocol", http.StatusBadRequest)
+		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusBadRequest)
 	}
 }
 
@@ -72,6 +72,7 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 	resp, err := h.transport().RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusServiceUnavailable)
 		return
 	}
 	defer resp.Body.Close()
@@ -86,31 +87,34 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		http.Error(w, "hijack not supported", http.StatusInternalServerError)
+		http.Error(w, "Hijack not supported", http.StatusInternalServerError)
+		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusInternalServerError)
 		return
 	}
 
 	clientConn, _, err := hj.Hijack()
 	if err != nil {
+		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusInternalServerError)
 		return
 	}
 
-	var hostPort string
-	if strings.Contains(req.Host, ":") {
-		hostPort = req.Host
-	} else {
-		hostPort = req.Host + ":80"
+	hostPort := req.Host
+	if !strings.Contains(hostPort, ":") {
+		hostPort += ":80"
 	}
+
 	targetConn, err := net.Dial("tcp", hostPort)
 	if err != nil {
 		clientConn.Close()
+		h.Logger.RegisterWithLevel(utils.ERROR, hostPort, "WEBSOCKET", 0)
 		return
 	}
 
 	req.Write(targetConn)
-
 	go io.Copy(targetConn, clientConn)
 	go io.Copy(clientConn, targetConn)
+
+	h.Logger.RegisterWithLevel(utils.INFO, hostPort, "WEBSOCKET", 0)
 }
 
 func (h *Proxy) transport() *http.Transport {
@@ -132,58 +136,40 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 	destConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusServiceUnavailable)
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 	clientConn, err := helper.GetHijack(w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		h.Logger.Register(req.Host, "CONNECT", http.StatusInternalServerError)
+		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusInternalServerError)
 		return
 	}
 
 	go io.Copy(destConn, clientConn)
-	//go utils.CopyWithRateLimit(clientConn, destConn, 5000)
 	go io.Copy(clientConn, destConn)
-
-	h.Logger.Register(req.Host, "CONNECT", http.StatusOK)
+	h.Logger.RegisterWithLevel(utils.INFO, req.Host, "CONNECT", http.StatusOK)
 }
 
-const authenticationRequiredHTML = `
-<!DOCTYPE HTML "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title>407 Proxy Authentication Required</title>
-</head><body>
-<h1>Proxy Authentication Required</h1>
-<p>This server could not verify that you
-are authorized to access the document
-requested.  Either you supplied the wrong
-credentials (e.g., bad password), or your
-browser doesn't understand how to supply
-the credentials required.</p>
-</body></html>
-`
-
-const ACLDeniedHTML = `
-<!DOCTYPE HTML "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title>401 Proxy Authentication Denied</title>
-</head><body>
-<h1>Proxy Authentication Denied</h1>
-<p>You do not have permission to access this site.</p>
-</body></html>
-`
-
 func (h *Proxy) AuthRequired(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Proxy-Authenticate", "Basic realm=\"Doppler\"")
+	w.Header().Add("Proxy-Authenticate", `Basic realm="Doppler"`)
 	w.Header().Add("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusProxyAuthRequired)
 	w.Write([]byte(authenticationRequiredHTML))
 }
 
-// basicAuth .
+const authenticationRequiredHTML = `<html>
+<head><title>Proxy Authentication Required</title></head>
+<body>
+<h1>Proxy Authentication Required</h1>
+<p>This proxy server requires authentication to access the requested resource.</p>
+</body>
+</html>`
+
 func (h *Proxy) BasicAuth(credentials string) error {
-	config, err := config.GetConfig()
+	conf, err := config.GetConfig()
 	if err != nil {
 		return errors.New("Unauthorized")
 	}
@@ -191,23 +177,21 @@ func (h *Proxy) BasicAuth(credentials string) error {
 	if len(credentials) < 6 {
 		return errors.New("Unauthorized")
 	}
+
 	decoded, err := base64.StdEncoding.DecodeString(credentials[6:])
 	if err != nil {
 		return errors.New("Unauthorized")
 	}
-	splitData := strings.Split(string(decoded), ":")
-	if len(splitData) == 1 {
+
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
 		return errors.New("Unauthorized")
 	}
-	username := splitData[0]
-	password := splitData[1]
 
-	// TODO: Validate username and password
-	user, ok := config.Auth.Users[username]
-	if ok && user == password {
+	username, password := parts[0], parts[1]
+	if pass, ok := conf.Auth.Users[username]; ok && pass == password {
 		return nil
 	}
-
 	return errors.New("Unauthorized")
 }
 
