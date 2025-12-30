@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -189,9 +191,15 @@ func (h *Proxy) BasicAuth(credentials string) error {
 	}
 
 	username, password := parts[0], parts[1]
-	if pass, ok := conf.Auth.Users[username]; ok && pass == password {
-		return nil
+
+	if storedHash, ok := conf.Auth.Users[username]; ok {
+		sum := sha256.Sum256([]byte(strings.Trim(password, " ")))
+		hashStr := fmt.Sprintf("%x", sum)
+		if hashStr == storedHash {
+			return nil
+		}
 	}
+
 	return errors.New("Unauthorized")
 }
 
