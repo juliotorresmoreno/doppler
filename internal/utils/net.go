@@ -5,33 +5,46 @@ import (
 	"time"
 )
 
-func CopyWithRateLimit(dst io.Writer, src io.Reader, rateLimit int64) (int64, time.Duration, error) {
-	buffer := make([]byte, 4096)
+func CopyWithRateLimit(dst io.Writer, src io.Reader, rateKB int64) (int64, time.Duration, error) {
+	buf := make([]byte, 32*1024)
+	rateBytes := rateKB * 1024
 
-	var totalBytesCopied int64
-	startTime := time.Now()
+	var copied int64
+	start := time.Now()
+	windowStart := start
+	var windowBytes int64
 
 	for {
-		n, err := src.Read(buffer)
+		n, err := src.Read(buf)
 		if n > 0 {
-			totalBytesCopied += int64(n)
-			_, err := dst.Write(buffer[:n])
-			if err != nil {
-				return totalBytesCopied, time.Since(startTime), err
+			written, werr := dst.Write(buf[:n])
+			if werr != nil {
+				return copied, time.Since(start), werr
+			}
+
+			copied += int64(written)
+			windowBytes += int64(written)
+
+			elapsed := time.Since(windowStart)
+			expected := time.Duration(windowBytes*int64(time.Second)) / time.Duration(rateBytes)
+
+			if expected > elapsed {
+				time.Sleep(expected - elapsed)
+			}
+
+			if elapsed >= time.Second {
+				windowStart = time.Now()
+				windowBytes = 0
 			}
 		}
 
-		// No hay suficientes tokens, calcular el tiempo de espera basado en la velocidad
-		waitTime := time.Microsecond * time.Duration(rateLimit)
-		time.Sleep(waitTime)
-
 		if err == io.EOF {
 			break
-		} else if err != nil {
-			return totalBytesCopied, time.Since(startTime), err
+		}
+		if err != nil {
+			return copied, time.Since(start), err
 		}
 	}
 
-	elapsedTime := time.Since(startTime)
-	return totalBytesCopied, elapsedTime, nil
+	return copied, time.Since(start), nil
 }

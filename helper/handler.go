@@ -5,9 +5,9 @@ import "strconv"
 func ParseIntParams(val string, defaultValue int) int {
 	result := defaultValue
 	if val != "" {
-		tlimit, _ := strconv.Atoi(val)
-		if tlimit > 0 {
-			result = tlimit
+		value, _ := strconv.Atoi(val)
+		if value > 0 {
+			result = value
 		}
 	}
 	return result

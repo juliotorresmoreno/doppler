@@ -135,6 +135,13 @@ func isWebSocket(r *http.Request) bool {
 }
 
 func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
+	conf, err := config.GetConfig()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusInternalServerError)
+		return
+	}
+
 	destConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -151,7 +158,11 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 	}
 
 	go io.Copy(destConn, clientConn)
-	go io.Copy(clientConn, destConn)
+	if conf.Limit > 0 {
+		go utils.CopyWithRateLimit(clientConn, destConn, conf.Limit) // limit in KB/s
+	} else {
+		go io.Copy(clientConn, destConn)
+	}
 	h.Logger.RegisterWithLevel(utils.INFO, req.Host, "CONNECT", http.StatusOK)
 }
 

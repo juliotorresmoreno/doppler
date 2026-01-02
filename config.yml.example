@@ -1,6 +1,6 @@
 addr: :5000
 logger: false
-limit: 10
+limit: 5000 # in KB/s
 read_timeout: 30
 write_timeout: 120
 auth:

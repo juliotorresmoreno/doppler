@@ -23,7 +23,7 @@ type Auth struct {
 
 type Config struct {
 	Auth         Auth   `yaml:"auth"`
-	Limit        int    `yaml:"limit"`
+	Limit        int64  `yaml:"limit"`
 	Addr         string `yaml:"addr"`
 	Logger       bool   `yaml:"logger"`
 	ReadTimeout  int    `yaml:"read_timeout"`
