@@ -37,7 +37,7 @@ adduser $app_name \
     --disabled-login > /dev/null
 
 # Set permissions
-chown -R $app_name:$app_name /etc/$app_name
+chown -R $app_name: /etc/$app_name
 
 # Start application
 systemctl daemon-reload
