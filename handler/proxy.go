@@ -149,7 +149,7 @@ func (h *Proxy) transport() *http.Transport {
 
 func getIpAddress(host string) []net.IP {
 	ips, err := net.LookupIP(host)
-	if err != nil || len(ips) == 0 {
+	if err != nil {
 		return make([]net.IP, 0)
 	}
 	return ips
