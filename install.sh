@@ -4,7 +4,7 @@ app_name=doppler
 bin_path=/tmp/$app_name-6415415
 
 if [ $USER != "root" ]; then
-  echo "No eres root"
+  echo "This installer must be run as root."
   exit 1
 fi
 
