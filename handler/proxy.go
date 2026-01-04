@@ -150,7 +150,7 @@ func (h *Proxy) transport() *http.Transport {
 func getIpAddress(host string) []net.IP {
 	ips, err := net.LookupIP(host)
 	if err != nil || len(ips) == 0 {
-		return nil
+		return make([]net.IP, 0)
 	}
 	return ips
 }
@@ -159,10 +159,8 @@ func isAllowedHost(host string, permitList, blockList []string, defaultPolicy st
 	hosts := make([]string, 0)
 	hosts = append(hosts, host)
 
-	if ip := getIpAddress(host); ip != nil {
-		for _, ip := range ip {
-			hosts = append(hosts, ip.String())
-		}
+	for _, ip := range getIpAddress(host) {
+		hosts = append(hosts, ip.String())
 	}
 
 	for _, host := range hosts {
