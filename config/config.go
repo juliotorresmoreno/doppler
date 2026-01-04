@@ -21,8 +21,15 @@ type Auth struct {
 	Users   map[string]string `yaml:"users"`
 }
 
+type ACL struct {
+	Default string   `yaml:"default"`
+	Permit  []string `yaml:"permit"`
+	Block   []string `yaml:"block"`
+}
+
 type Config struct {
 	Auth         Auth   `yaml:"auth"`
+	ACL          ACL    `yaml:"ACL"`
 	Limit        int64  `yaml:"limit"`
 	Addr         string `yaml:"addr"`
 	Logger       bool   `yaml:"logger"`
@@ -57,6 +64,15 @@ func GetConfig() (Config, error) {
 		Logger:       true,
 		ReadTimeout:  30,
 		WriteTimeout: 120,
+		Auth: Auth{
+			Enabled: false,
+			Users:   make(map[string]string),
+		},
+		ACL: ACL{
+			Default: "permit",
+			Permit:  make([]string, 0),
+			Block:   make([]string, 0),
+		},
 	}
 
 	f, err := os.Open(configPath)

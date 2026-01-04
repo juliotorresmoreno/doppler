@@ -66,6 +66,24 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 }
 
 func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
+	host := req.URL.Hostname()
+	conf, err := config.GetConfig()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusInternalServerError)
+		return
+	}
+
+	if strings.Contains(host, ":") {
+		host, _, _ = net.SplitHostPort(host)
+	}
+
+	if !isAllowedHost(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusForbidden)
+		return
+	}
+
 	if isWebSocket(req) {
 		h.handleWebSocket(w, req)
 		return
@@ -129,6 +147,41 @@ func (h *Proxy) transport() *http.Transport {
 	}
 }
 
+func getIpAddress(host string) []net.IP {
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return nil
+	}
+	return ips
+}
+
+func isAllowedHost(host string, permitList, blockList []string, defaultPolicy string) bool {
+	hosts := make([]string, 0)
+	hosts = append(hosts, host)
+
+	if ip := getIpAddress(host); ip != nil {
+		for _, ip := range ip {
+			hosts = append(hosts, ip.String())
+		}
+	}
+
+	for _, host := range hosts {
+		for _, blocked := range blockList {
+			if strings.EqualFold(host, blocked) {
+				return false
+			}
+		}
+
+		for _, permitted := range permitList {
+			if strings.EqualFold(host, permitted) {
+				return true
+			}
+		}
+	}
+
+	return strings.EqualFold(defaultPolicy, "permit")
+}
+
 func isWebSocket(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("Connection"), "Upgrade") &&
 		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
@@ -139,6 +192,17 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusInternalServerError)
+		return
+	}
+
+	host := req.URL.Hostname()
+	if strings.Contains(host, ":") {
+		host, _, _ = net.SplitHostPort(host)
+	}
+
+	if !isAllowedHost(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		h.Logger.RegisterWithLevel(utils.WARN, req.Host, "CONNECT", http.StatusForbidden)
 		return
 	}
 
