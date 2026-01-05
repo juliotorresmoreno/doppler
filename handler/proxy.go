@@ -1,10 +1,6 @@
 package handler
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
-	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -78,13 +74,13 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 		host, _, _ = net.SplitHostPort(host)
 	}
 
-	if !isAllowedHost(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default) {
+	if !utils.IsAllowedHost(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusForbidden)
 		return
 	}
 
-	if isWebSocket(req) {
+	if utils.IsWebSocket(req) {
 		h.handleWebSocket(w, req)
 		return
 	}
@@ -97,7 +93,7 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	copyHeader(w.Header(), resp.Header)
+	utils.CopyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
 
@@ -147,44 +143,6 @@ func (h *Proxy) transport() *http.Transport {
 	}
 }
 
-func getIpAddress(host string) []net.IP {
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return make([]net.IP, 0)
-	}
-	return ips
-}
-
-func isAllowedHost(host string, permitList, blockList []string, defaultPolicy string) bool {
-	hosts := make([]string, 0)
-	hosts = append(hosts, host)
-
-	for _, ip := range getIpAddress(host) {
-		hosts = append(hosts, ip.String())
-	}
-
-	for _, host := range hosts {
-		for _, blocked := range blockList {
-			if strings.EqualFold(host, blocked) {
-				return false
-			}
-		}
-
-		for _, permitted := range permitList {
-			if strings.EqualFold(host, permitted) {
-				return true
-			}
-		}
-	}
-
-	return strings.EqualFold(defaultPolicy, "permit")
-}
-
-func isWebSocket(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("Connection"), "Upgrade") &&
-		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-}
-
 func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 	conf, err := config.GetConfig()
 	if err != nil {
@@ -198,7 +156,7 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 		host, _, _ = net.SplitHostPort(host)
 	}
 
-	if !isAllowedHost(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default) {
+	if !utils.IsAllowedHost(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, "CONNECT", http.StatusForbidden)
 		return
@@ -226,60 +184,4 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 		go io.Copy(clientConn, destConn)
 	}
 	h.Logger.RegisterWithLevel(utils.INFO, req.Host, "CONNECT", http.StatusOK)
-}
-
-func (h *Proxy) AuthRequired(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Proxy-Authenticate", `Basic realm="Doppler"`)
-	w.Header().Add("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusProxyAuthRequired)
-	w.Write([]byte(authenticationRequiredHTML))
-}
-
-const authenticationRequiredHTML = `<html>
-<head><title>Proxy Authentication Required</title></head>
-<body>
-<h1>Proxy Authentication Required</h1>
-<p>This proxy server requires authentication to access the requested resource.</p>
-</body>
-</html>`
-
-func (h *Proxy) BasicAuth(credentials string) error {
-	conf, err := config.GetConfig()
-	if err != nil {
-		return errors.New("Unauthorized")
-	}
-
-	if len(credentials) < 6 {
-		return errors.New("Unauthorized")
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(credentials[6:])
-	if err != nil {
-		return errors.New("Unauthorized")
-	}
-
-	parts := strings.SplitN(string(decoded), ":", 2)
-	if len(parts) != 2 {
-		return errors.New("Unauthorized")
-	}
-
-	username, password := parts[0], parts[1]
-
-	if storedHash, ok := conf.Auth.Users[username]; ok {
-		sum := sha256.Sum256([]byte(strings.Trim(password, " ")))
-		hashStr := fmt.Sprintf("%x", sum)
-		if hashStr == storedHash {
-			return nil
-		}
-	}
-
-	return errors.New("Unauthorized")
-}
-
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
-		}
-	}
 }
