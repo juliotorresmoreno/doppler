@@ -32,6 +32,9 @@ type Config struct {
 	ACL          ACL    `yaml:"ACL"`
 	Limit        int64  `yaml:"limit"`
 	Addr         string `yaml:"addr"`
+	TLSAddr      string `yaml:"tls_addr"`
+	TLSCert      string `yaml:"tls_cert"`
+	TLSKey       string `yaml:"tls_key"`
 	Logger       bool   `yaml:"logger"`
 	ReadTimeout  int    `yaml:"read_timeout"`
 	WriteTimeout int    `yaml:"write_timeout"`

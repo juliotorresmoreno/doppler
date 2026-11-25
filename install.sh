@@ -25,8 +25,12 @@ mkdir -p /etc/$app_name
 
 # Configure application
 echo "Configuring application..."
-if [ ! -f config.yml ]; then
-  cp config.yml.example config.yml
+if [ ! -f /etc/$app_name/config.yml ]; then
+  if [ ! -f config.yml ]; then
+    cp config.yml.example config.yml
+  fi
+  
+  cp config.yml /etc/$app_name
 fi
 cp config.yml /etc/$app_name &> /dev/null
 cp config.yml.example /etc/$app_name &> /dev/null

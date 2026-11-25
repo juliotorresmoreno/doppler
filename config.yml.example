@@ -1,4 +1,8 @@
 addr: :5000
+# TLS listener on a separate port. Leave tls_addr empty to disable it.
+tls_addr: ""       # e.g. ":5443"
+tls_cert: ""       # path to PEM certificate, required when tls_addr is set
+tls_key: ""        # path to PEM private key, required when tls_addr is set
 logger: false
 limit: 5000 # in KB/s
 read_timeout: 30

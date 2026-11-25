@@ -129,7 +129,7 @@ Transparent redirection is provided by the surrounding network configuration and
 
 Doppler includes proxy authentication and destination access policies. However, these features should not be interpreted as a complete security boundary.
 
-The current implementation does not provide TLS encryption for the client-to-proxy connection.
+Doppler can optionally serve the proxy over TLS on a separate port (`tls_addr`, with `tls_cert` and `tls_key`). The plain listener on `addr` remains available, so TLS is not enforced unless clients are directed to the TLS port.
 
 Consequently, credentials and proxy requests may be exposed when the connection travels across an untrusted network.
 
@@ -155,7 +155,6 @@ A graphical management interface and centralized administrative API are not curr
 
 Potential areas of development include:
 
-- TLS support for client-to-proxy connections.
 - More comprehensive access-control tests.
 - Improved DNS resolution and IP policy handling.
 - Connection and access logs.
