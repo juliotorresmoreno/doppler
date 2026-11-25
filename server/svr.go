@@ -17,6 +17,7 @@ import (
 func Configure() (*http.Server, *http.Server) {
 	r := mux.NewRouter()
 	r.Use(middleware.Cors)
+	r.HandleFunc("/proxy.pac", servePAC).Methods("GET")
 
 	conf, _ := config.GetConfig()
 	h := handler.ProxyHandler(r)

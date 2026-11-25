@@ -18,6 +18,9 @@ if [ ! -f "$cert_dir/tls.crt" ] || [ ! -f "$cert_dir/tls.key" ]; then
   sh scripts/gen-certs.sh "$cert_dir"
 fi
 
+# proxy.pac is served by Doppler at /proxy.pac, from the config directory.
+cp proxy.pac "$cert_dir/proxy.pac"
+
 if [ ! -f "$conf" ]; then
   mkdir -p "$cert_dir"
   sed \

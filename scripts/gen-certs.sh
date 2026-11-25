@@ -11,7 +11,10 @@ openssl req -x509 -newkey rsa:2048 -nodes \
   -out "$cert_dir/tls.crt" \
   -days 365 \
   -subj "/O=Doppler/CN=localhost" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+  -addext "extendedKeyUsage=serverAuth" 2>/dev/null
 
 chmod 600 "$cert_dir/tls.key"
 echo "Generated $cert_dir/tls.crt and $cert_dir/tls.key (valid 365 days)"

@@ -34,7 +34,26 @@ if [ ! -f /etc/$app_name/config.yml ]; then
 fi
 cp config.yml /etc/$app_name &> /dev/null
 cp config.yml.example /etc/$app_name &> /dev/null
+cp proxy.pac /etc/$app_name
 cp $app_name.service /etc/systemd/system
+
+# TLS certificate: generated once, kept on reinstall.
+cert_dir=/etc/$app_name/certs
+if [ ! -f $cert_dir/tls.crt ] || [ ! -f $cert_dir/tls.key ]; then
+  echo "Generating TLS certificate..."
+  mkdir -p $cert_dir
+  sh scripts/gen-certs.sh $cert_dir
+fi
+
+# Enable the TLS listener in the installed config, unless it is already set.
+if ! grep -q '^tls_addr:' /etc/$app_name/config.yml; then
+  printf '\n' >> /etc/$app_name/config.yml
+  cat >> /etc/$app_name/config.yml <<EOF
+tls_addr: ":5443"
+tls_cert: "$cert_dir/tls.crt"
+tls_key: "$cert_dir/tls.key"
+EOF
+fi
 
 # Create system user
 echo "Creating system user..."

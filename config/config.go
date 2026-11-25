@@ -35,6 +35,7 @@ type Config struct {
 	TLSAddr      string `yaml:"tls_addr"`
 	TLSCert      string `yaml:"tls_cert"`
 	TLSKey       string `yaml:"tls_key"`
+	PublicHost   string `yaml:"public_host"` // host clients use to reach this proxy, e.g. proxy.example.com
 	Logger       bool   `yaml:"logger"`
 	ReadTimeout  int    `yaml:"read_timeout"`
 	WriteTimeout int    `yaml:"write_timeout"`
@@ -51,6 +52,18 @@ func getConfigArgs() {
 	configPathDefault := path.Join(dir, "config.yml")
 	flag.StringVar(&configPath, "c", configPathDefault, "config path")
 	flag.Parse()
+}
+
+// PACFile returns the proxy.pac path, expected next to the config file.
+func PACFile() string {
+	if configPath == "" {
+		getConfigArgs()
+	}
+	dir, err := filepath.Abs(filepath.Dir(configPath))
+	if err != nil {
+		return "proxy.pac"
+	}
+	return filepath.Join(dir, "proxy.pac")
 }
 
 func GetConfig() (Config, error) {

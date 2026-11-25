@@ -3,6 +3,7 @@ addr: :5000
 tls_addr: ""       # e.g. ":5443"
 tls_cert: ""       # path to PEM certificate, required when tls_addr is set
 tls_key: ""        # path to PEM private key, required when tls_addr is set
+public_host: ""    # domain used in proxy.pac; empty = Host header of the request
 logger: false
 limit: 5000 # in KB/s
 read_timeout: 30
