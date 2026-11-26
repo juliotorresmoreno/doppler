@@ -41,7 +41,7 @@ func tcpPair(t *testing.T) (proxyA, peerA, proxyB, peerB net.Conn) {
 func TestRelayHalfCloseKeepsReturnPath(t *testing.T) {
 	proxyA, peerA, proxyB, peerB := tcpPair(t)
 	done := make(chan struct{})
-	go func() { Relay(proxyA, proxyB, 0, 0); close(done) }()
+	go func() { Relay(proxyA, proxyB, 0, 0, 0); close(done) }()
 
 	peerA.Write([]byte("request"))
 	peerA.(*net.TCPConn).CloseWrite()
@@ -62,7 +62,7 @@ func TestRelayHalfCloseKeepsReturnPath(t *testing.T) {
 func TestRelayIdleTimeoutClosesTunnel(t *testing.T) {
 	proxyA, peerA, proxyB, peerB := tcpPair(t)
 	done := make(chan struct{})
-	go func() { Relay(proxyA, proxyB, 200*time.Millisecond, 0); close(done) }()
+	go func() { Relay(proxyA, proxyB, 200*time.Millisecond, 0, 0); close(done) }()
 
 	select {
 	case <-done:
@@ -81,7 +81,7 @@ func TestRelayIdleTimeoutClosesTunnel(t *testing.T) {
 
 func TestRelayThrottlesBothDirections(t *testing.T) {
 	proxyA, peerA, proxyB, peerB := tcpPair(t)
-	go Relay(proxyA, proxyB, 0, 2) // 2 KB/s each way
+	go Relay(proxyA, proxyB, 0, 2, 0) // 2 KB/s each way
 
 	data := make([]byte, 3*1024)
 	start := time.Now()
@@ -95,4 +95,33 @@ func TestRelayThrottlesBothDirections(t *testing.T) {
 	if elapsed < 1*time.Second {
 		t.Errorf("client->destination not throttled: %v for 3KB at 2KB/s", elapsed)
 	}
+}
+
+func TestRelayMaxDurationClosesActiveTunnel(t *testing.T) {
+	proxyA, peerA, proxyB, peerB := tcpPair(t)
+	done := make(chan struct{})
+	go func() { Relay(proxyA, proxyB, 0, 0, 300*time.Millisecond); close(done) }()
+
+	// Keep traffic flowing so only the maximum duration can end the tunnel.
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				peerA.Write([]byte("x"))
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+	}()
+	go io.Copy(io.Discard, peerB)
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("active tunnel was not closed at max duration")
+	}
+	_ = proxyA
 }

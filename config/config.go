@@ -55,6 +55,14 @@ type Config struct {
 	ReadTimeout  int    `yaml:"read_timeout"`
 	WriteTimeout int    `yaml:"write_timeout"`
 	IdleTimeout  int    `yaml:"idle_timeout"` // seconds without traffic before a tunnel is closed; 0 disables
+	// MaxConnections caps concurrent proxied connections (tunnels and forwarded
+	// requests). Extra requests get 503. 0 means no limit.
+	MaxConnections int `yaml:"max_connections"`
+	// MaxTunnelSeconds closes a tunnel after this many seconds, whatever its
+	// activity. 0 means no limit.
+	MaxTunnelSeconds int `yaml:"max_tunnel_seconds"`
+	// MaxHeaderBytes bounds the size of request headers. 0 keeps the Go default (1 MB).
+	MaxHeaderBytes int `yaml:"max_header_bytes"`
 }
 
 var config interface{}
@@ -91,12 +99,14 @@ func GetConfig() (Config, error) {
 		getConfigArgs()
 	}
 	result := Config{
-		Addr:         ":4080",
-		Limit:        10,
-		Logger:       true,
-		ReadTimeout:  30,
-		WriteTimeout: 120,
-		IdleTimeout:  300,
+		Addr:           ":4080",
+		Limit:          10,
+		Logger:         true,
+		ReadTimeout:    30,
+		WriteTimeout:   120,
+		IdleTimeout:    300,
+		MaxConnections: 1024,
+		MaxHeaderBytes: 16 << 10,
 		Auth: Auth{
 			Enabled:          false,
 			Users:            make(map[string]string),

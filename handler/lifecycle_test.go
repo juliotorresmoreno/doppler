@@ -163,3 +163,68 @@ func TestLifecycleNoGoroutineLeak(t *testing.T) {
 }
 
 var _ = bufio.NewReader
+
+// max_connections: extra connections get 503 while the limit is full, and a slot
+// is available again once a tunnel closes.
+func TestResourceLimitMaxConnections(t *testing.T) {
+	addr, _ := target(t, func(c net.Conn) { io.Copy(io.Discard, c) })
+	config.Set(config.Config{Logger: false, ACL: config.ACL{Default: "permit"}, MaxConnections: 2, Auth: config.Auth{Users: map[string]string{}}})
+	srv := httptest.NewServer(ProxyHandler(http.NotFoundHandler()))
+	t.Cleanup(srv.Close)
+	proxy := srv.Listener.Addr().String()
+
+	got1, c1, _ := connect(t, proxy, addr)
+	got2, c2, _ := connect(t, proxy, addr)
+	if got1 != 200 || got2 != 200 {
+		t.Fatalf("first two tunnels: %d %d", got1, got2)
+	}
+	got3, c3, _ := connect(t, proxy, addr)
+	c3.Close()
+	if got3 != 503 {
+		t.Errorf("third connection with limit 2: got %d, want 503", got3)
+	}
+
+	c1.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		got4, c4, _ := connect(t, proxy, addr)
+		c4.Close()
+		if got4 == 200 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slot not released after a tunnel closed: last status %d", got4)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	c2.Close()
+}
+
+// max_tunnel_seconds ends a tunnel even when it keeps moving data.
+func TestResourceLimitMaxTunnelDuration(t *testing.T) {
+	addr, _ := target(t, func(c net.Conn) { io.Copy(c, c) })
+	config.Set(config.Config{Logger: false, ACL: config.ACL{Default: "permit"}, MaxTunnelSeconds: 1, Auth: config.Auth{Users: map[string]string{}}})
+	srv := httptest.NewServer(ProxyHandler(http.NotFoundHandler()))
+	t.Cleanup(srv.Close)
+
+	got, c, br := connect(t, srv.Listener.Addr().String(), addr)
+	if got != 200 {
+		t.Fatalf("tunnel: %d", got)
+	}
+	defer c.Close()
+	start := time.Now()
+	for time.Since(start) < 3*time.Second {
+		c.SetWriteDeadline(time.Now().Add(time.Second))
+		if _, err := io.WriteString(c, "x"); err != nil {
+			break
+		}
+		c.SetReadDeadline(time.Now().Add(time.Second))
+		if _, err := io.ReadFull(br, make([]byte, 1)); err != nil {
+			break
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
+		t.Errorf("tunnel lived %v despite max_tunnel_seconds=1", elapsed)
+	}
+}

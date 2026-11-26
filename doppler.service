@@ -9,6 +9,8 @@ ExecStart=/usr/bin/doppler -c /etc/doppler/config.yml
 PIDFile=/run/redis/doppler.pid
 TimeoutStopSec=0
 Restart=always
+# Each tunnel uses two sockets; keep room above max_connections.
+LimitNOFILE=8192
 User=doppler
 Group=nogroup
 

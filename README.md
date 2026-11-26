@@ -138,6 +138,19 @@ For CONNECT tunnels and WebSocket connections, Doppler:
 
 Destination connection attempts time out after 10 seconds.
 
+## Resource limits
+
+| Option | Default | Effect |
+|---|---|---|
+| `max_connections` | 1024 | Concurrent proxied connections (tunnels and forwarded requests). Extra requests get `503`. `0` = no limit. |
+| `idle_timeout` | 300 s | Tunnels with no traffic for this long are closed. Also limits idle keep-alive connections on the HTTP server. `0` = never. |
+| `max_tunnel_seconds` | 0 | Closes a tunnel after this long, even if it is active. `0` = no limit. |
+| `limit` | 5000 KB/s | Throughput per direction for tunnels. |
+| `max_header_bytes` | 16384 | Maximum request header size. `0` = Go default (1 MB). |
+| `auth.max_failures` and related | 5 / 15 min | Failed logins per IP before a temporary block. |
+
+The service unit sets `LimitNOFILE=8192`, because every tunnel uses two sockets.
+
 ## Transparent Traffic Redirection
 
 Doppler can be combined with tools such as [redsocks](https://github.com/darkk/redsocks) to redirect compatible outbound traffic transparently through the proxy.

@@ -23,23 +23,34 @@ func Configure() (*http.Server, *http.Server) {
 	h := handler.ProxyHandler(r)
 
 	server := &http.Server{
-		Addr:         conf.Addr,
-		Handler:      h,
-		ReadTimeout:  time.Duration(conf.ReadTimeout) * time.Second,
-		WriteTimeout: time.Duration(conf.WriteTimeout) * time.Second,
+		Addr:           conf.Addr,
+		MaxHeaderBytes: maxHeaderBytes(conf),
+		IdleTimeout:    time.Duration(conf.IdleTimeout) * time.Second,
+		Handler:        h,
+		ReadTimeout:    time.Duration(conf.ReadTimeout) * time.Second,
+		WriteTimeout:   time.Duration(conf.WriteTimeout) * time.Second,
 	}
 
 	var tlsServer *http.Server
 	if conf.TLSAddr != "" {
 		tlsServer = &http.Server{
-			Addr:         conf.TLSAddr,
-			Handler:      h,
-			ReadTimeout:  time.Duration(conf.ReadTimeout) * time.Second,
-			WriteTimeout: time.Duration(conf.WriteTimeout) * time.Second,
+			Addr:           conf.TLSAddr,
+			MaxHeaderBytes: maxHeaderBytes(conf),
+			IdleTimeout:    time.Duration(conf.IdleTimeout) * time.Second,
+			Handler:        h,
+			ReadTimeout:    time.Duration(conf.ReadTimeout) * time.Second,
+			WriteTimeout:   time.Duration(conf.WriteTimeout) * time.Second,
 			// A non-nil empty map disables automatic HTTP/2 (ALPN "h2").
 			// CONNECT tunnels need HTTP/1.1 hijacking, which HTTP/2 does not support.
 			TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
 		}
 	}
 	return server, tlsServer
+}
+
+func maxHeaderBytes(conf config.Config) int {
+	if conf.MaxHeaderBytes > 0 {
+		return conf.MaxHeaderBytes
+	}
+	return http.DefaultMaxHeaderBytes
 }

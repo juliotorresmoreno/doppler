@@ -17,14 +17,39 @@ import (
 type Proxy struct {
 	Fallback http.Handler
 	Logger   *utils.LoggerBD
+	// slots limits concurrent proxied connections; nil means unlimited.
+	slots chan struct{}
 }
 
 func ProxyHandler(fallback http.Handler) http.Handler {
+	conf, _ := config.GetConfig()
 	p := &Proxy{
 		Fallback: fallback,
 		Logger:   utils.NewLogger(),
 	}
+	if conf.MaxConnections > 0 {
+		p.slots = make(chan struct{}, conf.MaxConnections)
+	}
 	return http.HandlerFunc(p.Handle)
+}
+
+// acquire takes a connection slot. It returns false when the limit is reached.
+func (h *Proxy) acquire() bool {
+	if h.slots == nil {
+		return true
+	}
+	select {
+	case h.slots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Proxy) release() {
+	if h.slots != nil {
+		<-h.slots
+	}
 }
 
 func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
@@ -40,6 +65,13 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 		h.Fallback.ServeHTTP(res, req)
 		return
 	}
+
+	if !h.acquire() {
+		http.Error(res, "Too Many Connections", http.StatusServiceUnavailable)
+		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusServiceUnavailable)
+		return
+	}
+	defer h.release()
 
 	if conf.Auth.Enabled {
 		// Credentials are only accepted over the TLS listener; on plain HTTP the
@@ -155,7 +187,7 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []
 	}
 	conf, _ := config.GetConfig()
 	h.Logger.RegisterWithLevel(utils.INFO, hostPort, "WEBSOCKET", 0)
-	utils.Relay(clientConn, targetConn, idleTimeout(conf), conf.Limit)
+	utils.Relay(clientConn, targetConn, idleTimeout(conf), conf.Limit, maxTunnel(conf))
 }
 
 func (h *Proxy) transport() *http.Transport {
@@ -213,12 +245,17 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 	defer release()
 
 	h.Logger.RegisterWithLevel(utils.INFO, req.Host, "CONNECT", http.StatusOK)
-	utils.Relay(clientConn, destConn, idleTimeout(conf), conf.Limit) // limit in KB/s
+	utils.Relay(clientConn, destConn, idleTimeout(conf), conf.Limit, maxTunnel(conf)) // limit in KB/s
 }
 
 // idleTimeout converts the configured idle_timeout (seconds) to a duration.
 func idleTimeout(conf config.Config) time.Duration {
 	return time.Duration(conf.IdleTimeout) * time.Second
+}
+
+// maxTunnel converts the configured max_tunnel_seconds to a duration.
+func maxTunnel(conf config.Config) time.Duration {
+	return time.Duration(conf.MaxTunnelSeconds) * time.Second
 }
 
 // dialApproved returns a DialContext that connects only to the addresses the

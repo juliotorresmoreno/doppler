@@ -8,6 +8,9 @@ logger: false
 limit: 5000 # in KB/s
 read_timeout: 30
 idle_timeout: 300 # seconds without traffic before a tunnel is closed; 0 = never
+max_connections: 1024    # concurrent proxied connections; extra requests get 503; 0 = no limit
+max_tunnel_seconds: 0    # close any tunnel after this many seconds; 0 = no limit
+max_header_bytes: 16384  # maximum request header size; 0 = Go default (1 MB)
 write_timeout: 120
 auth:
   enabled: false

@@ -12,7 +12,15 @@ import (
 //   - When both directions are done, both connections are closed.
 //   - idle > 0 ends a direction that has had no traffic for that long.
 //   - limitKB > 0 throttles each direction to that many KB/s.
-func Relay(a, b net.Conn, idle time.Duration, limitKB int64) {
+//   - maxDuration > 0 closes the tunnel after that long, whatever its activity.
+func Relay(a, b net.Conn, idle time.Duration, limitKB int64, maxDuration time.Duration) {
+	if maxDuration > 0 {
+		timer := time.AfterFunc(maxDuration, func() {
+			a.Close()
+			b.Close()
+		})
+		defer timer.Stop()
+	}
 	done := make(chan struct{}, 2)
 	go func() {
 		copyDirection(b, a, idle, limitKB)
