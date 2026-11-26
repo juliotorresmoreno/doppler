@@ -29,7 +29,12 @@ const authenticationRequiredHTML = `<html>
 </body>
 </html>`
 
-var errUnauthorized = errors.New("Unauthorized")
+var (
+	errUnauthorized = errors.New("Unauthorized")
+	errAuthMissing  = errors.New("no credentials")
+	errAuthBlocked  = errors.New("blocked after repeated failures")
+	errAuthFailed   = errors.New("invalid credentials")
+)
 
 // authLimiter blocks an IP after too many failed logins. It is built from the
 // auth settings the first time credentials are checked.
@@ -64,24 +69,27 @@ var (
 
 // BasicAuth validates a Proxy-Authorization header for the client at clientIP.
 // An empty header is not a failure; it only triggers the 407 challenge.
-func (h *Proxy) BasicAuth(credentials, clientIP string) error {
+// BasicAuth validates a Proxy-Authorization header for the client at clientIP.
+// It returns the authenticated user name. An empty header is not a failure; it
+// only triggers the 407 challenge.
+func (h *Proxy) BasicAuth(credentials, clientIP string) (string, error) {
 	conf, err := config.GetConfig()
 	if err != nil {
-		return errUnauthorized
+		return "", errAuthFailed
 	}
 	if credentials == "" {
-		return errUnauthorized
+		return "", errAuthMissing
 	}
 	initAuthLimiter(conf.Auth)
 	if authLimiter.blocked(clientIP) {
 		log.Printf("[AUTH] blocked ip=%s (too many failed attempts)", clientIP)
-		return errUnauthorized
+		return "", errAuthBlocked
 	}
 
 	username, password, ok := parseBasic(credentials)
 	if !ok {
 		authFailed(clientIP, "")
-		return errUnauthorized
+		return "", errAuthFailed
 	}
 
 	stored, exists := conf.Auth.Users[username]
@@ -97,10 +105,10 @@ func (h *Proxy) BasicAuth(credentials, clientIP string) error {
 
 	if !valid {
 		authFailed(clientIP, username)
-		return errUnauthorized
+		return "", errAuthFailed
 	}
 	authLimiter.reset(clientIP)
-	return nil
+	return username, nil
 }
 
 // parseBasic extracts user and password from "Basic <base64(user:password)>".

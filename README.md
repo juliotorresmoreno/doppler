@@ -139,6 +139,33 @@ For CONNECT tunnels and WebSocket connections, Doppler:
 
 Destination connection attempts time out after 10 seconds.
 
+## Access logs
+
+With `access_log: true` (the default), Doppler writes one JSON line per proxied request to stdout. Under systemd these lines go to the journal: `journalctl -u doppler -f`.
+
+```json
+{"time":"2026-11-25T23:58:01-05:00","event":"connect","client":"127.0.0.1","user":"julio","method":"CONNECT","dest":"example.com:443","resolved":["93.184.215.14"],"decision":"allow","reason":"permit_name","status":200,"duration_ms":5321,"bytes_up":1840,"bytes_down":9902}
+{"time":"2026-11-25T23:58:09-05:00","event":"connect","client":"10.0.0.7","method":"CONNECT","dest":"blocked.example:443","decision":"deny","reason":"block_name","status":403,"duration_ms":0,"bytes_up":0,"bytes_down":0}
+```
+
+| Field | Meaning |
+|---|---|
+| `time` | When the request arrived (RFC 3339). |
+| `event` | `connect`, `http`, `websocket`, or `unknown`. |
+| `client` | Client IP address. |
+| `user` | Authenticated user name, when auth is enabled. |
+| `method`, `dest` | HTTP method and `host:port` requested. |
+| `resolved` | IP addresses the name resolved to. |
+| `decision` | `allow` or `deny`. |
+| `reason` | Why: `permit_name`, `permit_address`, `block_name`, `block_address`, `special_range`, `dns_failure`, `default_permit`, `default_block`, `too_many_connections`, `tls_required`, `auth_missing`, `auth_blocked`, `auth_failed`, `upstream_error`, `internal_error`, `shutting_down`, `unsupported_request`. |
+| `status` | HTTP status returned to the client. |
+| `duration_ms` | Time from arrival to the end of the request or tunnel. |
+| `bytes_up`, `bytes_down` | Bytes sent by the client and by the destination. |
+
+Never logged: passwords, `Proxy-Authorization` headers, request paths, query strings, or payloads. Only the host of a forwarded HTTP request is recorded.
+
+Failed logins and blocked IPs are also logged on the `[AUTH]` lines, regardless of `access_log`.
+
 ## Resource limits
 
 | Option | Default | Effect |

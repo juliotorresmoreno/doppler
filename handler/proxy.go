@@ -14,18 +14,33 @@ import (
 	"github.com/juliotorresmoreno/doppler/internal/utils"
 )
 
+// Extra reasons for access events, beyond the ACL reasons in internal/utils.
+const (
+	reasonTooManyConnections = "too_many_connections"
+	reasonTLSRequired        = "tls_required"
+	reasonAuthMissing        = "auth_missing"
+	reasonAuthBlocked        = "auth_blocked"
+	reasonAuthFailed         = "auth_failed"
+	reasonUpstreamError      = "upstream_error"
+	reasonInternalError      = "internal_error"
+	reasonShuttingDown       = "shutting_down"
+	reasonUnsupported        = "unsupported_request"
+)
+
 type Proxy struct {
 	Fallback http.Handler
 	Logger   *utils.LoggerBD
 	// slots limits concurrent proxied connections; nil means unlimited.
-	slots chan struct{}
+	slots     chan struct{}
+	accessLog bool
 }
 
 func ProxyHandler(fallback http.Handler) http.Handler {
 	conf, _ := config.GetConfig()
 	p := &Proxy{
-		Fallback: fallback,
-		Logger:   utils.NewLogger(),
+		Fallback:  fallback,
+		Logger:    utils.NewLogger(),
+		accessLog: conf.AccessLog,
 	}
 	if conf.MaxConnections > 0 {
 		p.slots = make(chan struct{}, conf.MaxConnections)
@@ -52,6 +67,20 @@ func (h *Proxy) release() {
 	}
 }
 
+// access returns a new event for a proxied request, or nil when access logging is off.
+func (h *Proxy) access(event string, req *http.Request) *utils.AccessEvent {
+	if !h.accessLog {
+		return nil
+	}
+	return utils.NewAccessEvent(event, clientIP(req), req.Method, req.Host)
+}
+
+func emit(ev *utils.AccessEvent) {
+	if ev != nil {
+		ev.Emit()
+	}
+}
+
 func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 	conf, err := config.GetConfig()
 	if err != nil {
@@ -66,7 +95,17 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	event := protocol
+	if protocol != "http" && protocol != "connect" {
+		event = "unknown"
+	}
+	ev := h.access(event, req)
+	defer emit(ev)
+
 	if !h.acquire() {
+		if ev != nil {
+			ev.SetDecision(false, reasonTooManyConnections, nil)
+		}
 		http.Error(res, "Too Many Connections", http.StatusServiceUnavailable)
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusServiceUnavailable)
 		return
@@ -77,15 +116,24 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 		// Credentials are only accepted over the TLS listener; on plain HTTP the
 		// request is refused before its Proxy-Authorization header is used.
 		if req.TLS == nil {
+			if ev != nil {
+				ev.SetDecision(false, reasonTLSRequired, nil)
+			}
 			http.Error(res, "Proxy authentication requires the TLS listener", http.StatusForbidden)
 			h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusForbidden)
 			return
 		}
-		authHeader := req.Header.Get("Proxy-Authorization")
-		if err := h.BasicAuth(authHeader, clientIP(req)); err != nil {
+		user, err := h.BasicAuth(req.Header.Get("Proxy-Authorization"), clientIP(req))
+		if err != nil {
+			if ev != nil {
+				ev.SetDecision(false, authReason(err), nil)
+			}
 			h.AuthRequired(res, req)
 			h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusProxyAuthRequired)
 			return
+		}
+		if ev != nil {
+			ev.User = user
 		}
 		req.Header.Del("Proxy-Authorization")
 		req.Header.Del("Proxy-Connection")
@@ -93,16 +141,52 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 
 	switch protocol {
 	case "http":
-		h.HandleHTTP(res, req)
+		h.HandleHTTP(res, req, ev)
 	case "connect":
-		h.HandleConnect(res, req)
+		h.HandleConnect(res, req, ev)
 	default:
+		if ev != nil {
+			ev.SetDecision(false, reasonUnsupported, nil)
+		}
 		http.Error(res, "Unsupported protocol", http.StatusBadRequest)
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusBadRequest)
 	}
 }
 
-func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
+// authReason maps an authentication error to an access-log reason.
+func authReason(err error) string {
+	switch {
+	case errors.Is(err, errAuthMissing):
+		return reasonAuthMissing
+	case errors.Is(err, errAuthBlocked):
+		return reasonAuthBlocked
+	default:
+		return reasonAuthFailed
+	}
+}
+
+// resolvedStrings returns the IPs as text for the access log.
+func resolvedStrings(ips []net.IP) []string {
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		out = append(out, ip.String())
+	}
+	return out
+}
+
+// countingReader counts the bytes read from a request body.
+type countingReader struct {
+	io.ReadCloser
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.ReadCloser.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request, ev *utils.AccessEvent) {
 	host := req.URL.Hostname()
 	conf, err := config.GetConfig()
 	if err != nil {
@@ -115,15 +199,21 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 		host, _, _ = net.SplitHostPort(host)
 	}
 
-	ips, ok := utils.Authorize(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default, conf.ACL.BlockSpecialRanges)
-	if !ok {
+	d := utils.Decide(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default, conf.ACL.BlockSpecialRanges)
+	if ev != nil {
+		ev.SetDecision(d.Allowed, d.Reason, resolvedStrings(d.IPs))
+	}
+	if !d.Allowed {
 		http.Error(w, "Forbidden", http.StatusForbidden)
+		if ev != nil {
+			ev.Status = http.StatusForbidden
+		}
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusForbidden)
 		return
 	}
 
 	if utils.IsWebSocket(req) {
-		h.handleWebSocket(w, req, ips)
+		h.handleWebSocket(w, req, d.IPs, ev)
 		return
 	}
 
@@ -132,10 +222,19 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 	// left open waiting for the transport's idle timeout.
 	tr := h.transport()
 	defer tr.CloseIdleConnections()
-	tr.DialContext = dialApproved(ips)
+	tr.DialContext = dialApproved(d.IPs)
+	body := &countingReader{ReadCloser: req.Body}
+	req.Body = body
 	resp, err := tr.RoundTrip(req)
+	if ev != nil {
+		ev.BytesUp = body.n
+	}
 	if err != nil {
 		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		if ev != nil {
+			ev.Reason = reasonUpstreamError
+			ev.Status = http.StatusServiceUnavailable
+		}
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusServiceUnavailable)
 		return
 	}
@@ -143,12 +242,16 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 
 	utils.CopyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	n, _ := io.Copy(w, resp.Body)
+	if ev != nil {
+		ev.Status = resp.StatusCode
+		ev.BytesDown = n
+	}
 
 	h.Logger.Register(req.Host, req.Method, resp.StatusCode)
 }
 
-func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []net.IP) {
+func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []net.IP, ev *utils.AccessEvent) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Hijack not supported", http.StatusInternalServerError)
@@ -171,6 +274,9 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []
 	targetConn, err := dialApprovedAddr(ips, hostPort)
 	if err != nil {
 		clientConn.Close()
+		if ev != nil {
+			ev.Reason = reasonUpstreamError
+		}
 		h.Logger.RegisterWithLevel(utils.ERROR, hostPort, "WEBSOCKET", 0)
 		return
 	}
@@ -179,6 +285,9 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []
 	if !ok {
 		clientConn.Close()
 		targetConn.Close()
+		if ev != nil {
+			ev.Reason = reasonShuttingDown
+		}
 		return
 	}
 	defer release()
@@ -186,12 +295,21 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []
 	if err := req.Write(targetConn); err != nil {
 		clientConn.Close()
 		targetConn.Close()
+		if ev != nil {
+			ev.Reason = reasonUpstreamError
+		}
 		h.Logger.RegisterWithLevel(utils.ERROR, hostPort, "WEBSOCKET", 0)
 		return
 	}
 	conf, _ := config.GetConfig()
+	if ev != nil {
+		ev.Status = http.StatusSwitchingProtocols
+	}
 	h.Logger.RegisterWithLevel(utils.INFO, hostPort, "WEBSOCKET", 0)
-	utils.Relay(clientConn, targetConn, idleTimeout(conf), conf.Limit, maxTunnel(conf))
+	up, down := utils.Relay(clientConn, targetConn, idleTimeout(conf), conf.Limit, maxTunnel(conf))
+	if ev != nil {
+		ev.BytesUp, ev.BytesDown = up, down
+	}
 }
 
 func (h *Proxy) transport() *http.Transport {
@@ -204,7 +322,7 @@ func (h *Proxy) transport() *http.Transport {
 	}
 }
 
-func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
+func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request, ev *utils.AccessEvent) {
 	conf, err := config.GetConfig()
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -217,17 +335,27 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 		host, _, _ = net.SplitHostPort(host)
 	}
 
-	ips, ok := utils.Authorize(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default, conf.ACL.BlockSpecialRanges)
-	if !ok {
+	d := utils.Decide(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default, conf.ACL.BlockSpecialRanges)
+	if ev != nil {
+		ev.SetDecision(d.Allowed, d.Reason, resolvedStrings(d.IPs))
+	}
+	if !d.Allowed {
 		http.Error(w, "Forbidden", http.StatusForbidden)
+		if ev != nil {
+			ev.Status = http.StatusForbidden
+		}
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, "CONNECT", http.StatusForbidden)
 		return
 	}
 
-	destConn, err := dialApprovedAddr(ips, req.Host)
+	destConn, err := dialApprovedAddr(d.IPs, req.Host)
 	if err != nil {
 		// The detail stays in the log; the client only learns it could not connect.
 		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		if ev != nil {
+			ev.Reason = reasonUpstreamError
+			ev.Status = http.StatusServiceUnavailable
+		}
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusServiceUnavailable)
 		return
 	}
@@ -236,6 +364,10 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 	clientConn, err := helper.GetHijack(w)
 	if err != nil {
 		destConn.Close()
+		if ev != nil {
+			ev.Reason = reasonInternalError
+			ev.Status = http.StatusInternalServerError
+		}
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusInternalServerError)
 		return
 	}
@@ -244,12 +376,21 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 	if !ok {
 		clientConn.Close()
 		destConn.Close()
+		if ev != nil {
+			ev.Reason = reasonShuttingDown
+		}
 		return
 	}
 	defer release()
 
+	if ev != nil {
+		ev.Status = http.StatusOK
+	}
 	h.Logger.RegisterWithLevel(utils.INFO, req.Host, "CONNECT", http.StatusOK)
-	utils.Relay(clientConn, destConn, idleTimeout(conf), conf.Limit, maxTunnel(conf)) // limit in KB/s
+	up, down := utils.Relay(clientConn, destConn, idleTimeout(conf), conf.Limit, maxTunnel(conf)) // limit in KB/s
+	if ev != nil {
+		ev.BytesUp, ev.BytesDown = up, down
+	}
 }
 
 // idleTimeout converts the configured idle_timeout (seconds) to a duration.

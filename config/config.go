@@ -63,6 +63,8 @@ type Config struct {
 	MaxTunnelSeconds int `yaml:"max_tunnel_seconds"`
 	// MaxHeaderBytes bounds the size of request headers. 0 keeps the Go default (1 MB).
 	MaxHeaderBytes int `yaml:"max_header_bytes"`
+	// AccessLog writes one structured JSON line per proxied request to stdout.
+	AccessLog bool `yaml:"access_log"`
 }
 
 var config interface{}
@@ -106,6 +108,7 @@ func GetConfig() (Config, error) {
 		WriteTimeout:   120,
 		IdleTimeout:    300,
 		MaxConnections: 1024,
+		AccessLog:      true,
 		MaxHeaderBytes: 16 << 10,
 		Auth: Auth{
 			Enabled:          false,

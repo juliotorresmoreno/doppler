@@ -2,6 +2,7 @@ package utils
 
 import (
 	"net"
+	"sync"
 	"time"
 )
 
@@ -13,7 +14,9 @@ import (
 //   - idle > 0 ends a direction that has had no traffic for that long.
 //   - limitKB > 0 throttles each direction to that many KB/s.
 //   - maxDuration > 0 closes the tunnel after that long, whatever its activity.
-func Relay(a, b net.Conn, idle time.Duration, limitKB int64, maxDuration time.Duration) {
+//
+// It returns the bytes copied from a to b (up) and from b to a (down).
+func Relay(a, b net.Conn, idle time.Duration, limitKB int64, maxDuration time.Duration) (up, down int64) {
 	if maxDuration > 0 {
 		timer := time.AfterFunc(maxDuration, func() {
 			a.Close()
@@ -21,22 +24,24 @@ func Relay(a, b net.Conn, idle time.Duration, limitKB int64, maxDuration time.Du
 		})
 		defer timer.Stop()
 	}
-	done := make(chan struct{}, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
-		copyDirection(b, a, idle, limitKB)
-		done <- struct{}{}
+		defer wg.Done()
+		up = copyDirection(b, a, idle, limitKB)
 	}()
 	go func() {
-		copyDirection(a, b, idle, limitKB)
-		done <- struct{}{}
+		defer wg.Done()
+		down = copyDirection(a, b, idle, limitKB)
 	}()
-	<-done
-	<-done
+	wg.Wait()
 	a.Close()
 	b.Close()
+	return up, down
 }
 
-func copyDirection(dst, src net.Conn, idle time.Duration, limitKB int64) {
+func copyDirection(dst, src net.Conn, idle time.Duration, limitKB int64) int64 {
+	var total int64
 	buf := make([]byte, 32*1024)
 	for {
 		if idle > 0 {
@@ -51,7 +56,9 @@ func copyDirection(dst, src net.Conn, idle time.Duration, limitKB int64) {
 			if idle > 0 {
 				dst.SetWriteDeadline(time.Now().Add(idle))
 			}
-			if _, werr := dst.Write(buf[:n]); werr != nil {
+			written, werr := dst.Write(buf[:n])
+			total += int64(written)
+			if werr != nil {
 				break
 			}
 		}
@@ -60,6 +67,7 @@ func copyDirection(dst, src net.Conn, idle time.Duration, limitKB int64) {
 		}
 	}
 	closeWrite(dst)
+	return total
 }
 
 // closeWrite half-closes c when the transport supports it.

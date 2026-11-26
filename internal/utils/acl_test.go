@@ -5,8 +5,8 @@ import "testing"
 const unresolvable = "doppler-nonexistent-host.invalid"
 
 func allowed(host string, permit, block []string, def string) bool {
-	_, ok := Authorize(host, permit, block, def, false)
-	return ok
+	d := Decide(host, permit, block, def, false)
+	return d.Allowed
 }
 
 func TestDNSFailureFailsClosedWithPermitDefault(t *testing.T) {
@@ -28,7 +28,8 @@ func TestBlockListWinsOverPermit(t *testing.T) {
 }
 
 func TestIPLiteralUsesPolicy(t *testing.T) {
-	ips, ok := Authorize("127.0.0.1", nil, nil, "permit", false)
+	d := Decide("127.0.0.1", nil, nil, "permit", false)
+	ips, ok := d.IPs, d.Allowed
 	if !ok || len(ips) != 1 || ips[0].String() != "127.0.0.1" {
 		t.Errorf("IP literal with permit default: ok=%v ips=%v", ok, ips)
 	}
@@ -113,8 +114,8 @@ func TestInternationalizedNamesMatchPunycode(t *testing.T) {
 }
 
 func authorizeSpecial(host string, permit, block []string, def string) bool {
-	_, ok := Authorize(host, permit, block, def, true)
-	return ok
+	d := Decide(host, permit, block, def, true)
+	return d.Allowed
 }
 
 func TestSpecialRangesBlockedByDefaultPolicy(t *testing.T) {
@@ -147,7 +148,7 @@ func TestExplicitNamePermitAllowsResolvedSpecialAddress(t *testing.T) {
 }
 
 func TestSpecialRangesCanBeDisabled(t *testing.T) {
-	if _, ok := Authorize("127.0.0.1", nil, nil, "permit", false); !ok {
+	if d := Decide("127.0.0.1", nil, nil, "permit", false); !d.Allowed {
 		t.Error("with block_special_ranges off, loopback follows the default policy")
 	}
 }

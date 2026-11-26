@@ -39,9 +39,29 @@ func GetIpAddress(host string) ([]net.IP, error) {
 // answers instead of depending on the machine's DNS.
 var LookupIP = net.LookupIP
 
-// Authorize decides whether host may be reached. It resolves the name exactly
-// once and returns the addresses the caller must connect to; connecting to the
-// name again would let DNS answer differently and bypass the IP rules.
+// Reasons reported in access logs and decisions.
+const (
+	ReasonBlockName     = "block_name"
+	ReasonBlockAddress  = "block_address"
+	ReasonPermitName    = "permit_name"
+	ReasonPermitAddress = "permit_address"
+	ReasonSpecialRange  = "special_range"
+	ReasonDNSFailure    = "dns_failure"
+	ReasonDefaultPermit = "default_permit"
+	ReasonDefaultBlock  = "default_block"
+)
+
+// Decision is the outcome of evaluating a destination.
+type Decision struct {
+	Allowed bool
+	Reason  string
+	// IPs are the resolved addresses; the connection must go only to these.
+	IPs []net.IP
+}
+
+// Decide evaluates host against the ACL. It resolves the name exactly once and
+// returns the addresses the caller must connect to; connecting to the name again
+// would let DNS answer differently and bypass the IP rules.
 //
 // Precedence (see README, "Policy evaluation"):
 //  1. A name on the block list, or any resolved address on the block list
@@ -53,39 +73,43 @@ var LookupIP = net.LookupIP
 //     is explicitly permitted by IP or CIDR.
 //  5. A resolved address on the permit list allows.
 //  6. Anything else follows defaultPolicy.
-func Authorize(host string, permitList, blockList []string, defaultPolicy string, blockSpecial bool) ([]net.IP, bool) {
+func Decide(host string, permitList, blockList []string, defaultPolicy string, blockSpecial bool) Decision {
 	if matchName(host, blockList) {
-		return nil, false
+		return Decision{Reason: ReasonBlockName}
 	}
 
 	ips, err := GetIpAddress(host)
 	if err != nil {
 		if matchName(host, permitList) {
-			return nil, true // allowed by name; the dial will fail and report it
+			// Allowed by name; the dial will fail and report it.
+			return Decision{Allowed: true, Reason: ReasonPermitName}
 		}
-		return nil, false
+		return Decision{Reason: ReasonDNSFailure}
 	}
 
 	for _, ip := range ips {
 		if matchIP(ip, blockList) {
-			return nil, false
+			return Decision{Reason: ReasonBlockAddress, IPs: ips}
 		}
 	}
 	if matchName(host, permitList) {
-		return ips, true
+		return Decision{Allowed: true, Reason: ReasonPermitName, IPs: ips}
 	}
 	if blockSpecial {
 		for _, ip := range ips {
 			if isSpecial(ip) && !matchIP(ip, permitList) {
-				return nil, false
+				return Decision{Reason: ReasonSpecialRange, IPs: ips}
 			}
 		}
 	}
 	for _, ip := range ips {
 		if matchIP(ip, permitList) {
-			return ips, true
+			return Decision{Allowed: true, Reason: ReasonPermitAddress, IPs: ips}
 		}
 	}
 
-	return ips, strings.EqualFold(defaultPolicy, "permit")
+	if strings.EqualFold(defaultPolicy, "permit") {
+		return Decision{Allowed: true, Reason: ReasonDefaultPermit, IPs: ips}
+	}
+	return Decision{Reason: ReasonDefaultBlock, IPs: ips}
 }
