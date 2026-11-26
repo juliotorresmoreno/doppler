@@ -11,6 +11,9 @@ import (
 
 func main() {
 	conf, _ := config.GetConfig()
+	if conf.Auth.Enabled && conf.TLSAddr == "" {
+		log.Fatal("auth.enabled requires tls_addr: credentials are only accepted over TLS")
+	}
 	svr, tlsSvr := server.Configure()
 
 	if tlsSvr != nil {

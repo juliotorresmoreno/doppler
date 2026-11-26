@@ -40,6 +40,13 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 	}
 
 	if conf.Auth.Enabled {
+		// Credentials are only accepted over the TLS listener; on plain HTTP the
+		// request is refused before its Proxy-Authorization header is used.
+		if req.TLS == nil {
+			http.Error(res, "Proxy authentication requires the TLS listener", http.StatusForbidden)
+			h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusForbidden)
+			return
+		}
 		authHeader := req.Header.Get("Proxy-Authorization")
 		if err := h.BasicAuth(authHeader, clientIP(req)); err != nil {
 			h.AuthRequired(res, req)

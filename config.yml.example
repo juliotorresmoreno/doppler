@@ -10,6 +10,7 @@ read_timeout: 30
 write_timeout: 120
 auth:
   enabled: false
+  # enabled requires tls_addr; credentials are only accepted over TLS.
   # users: name: bcrypt hash (make one with: go run ./cmd/hashpw)
   users: {}
 ACL:
