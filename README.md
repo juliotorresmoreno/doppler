@@ -20,15 +20,17 @@ Instead of relying exclusively on application-level restrictions, outbound conne
 
 ## Key Features
 
-- **HTTP CONNECT proxy:** Establish TCP tunnels to remote destinations.
-- **Domain-based access control:** Allow or block connections based on requested hostnames.
-- **IP-based access control:** Resolve destination hostnames and evaluate their associated IP addresses.
-- **Allowlist and blocklist:** Define which destinations can or cannot be accessed.
-- **Default access policy:** Configure the behavior for destinations that do not match an explicit rule.
-- **Authentication:** Support authenticated proxy access.
-- **Traffic limits:** Configurable transfer limits.
-- **Connection timeouts:** Configurable timeout settings.
-- **YAML configuration:** Manage proxy settings and access policies through configuration files.
+- **HTTP CONNECT proxy:** tunnels to remote destinations, plus plain HTTP and WebSocket forwarding.
+- **Domain policies:** exact names, `*.example.com` wildcards, case-insensitive, trailing dot ignored, internationalized names.
+- **IP policies:** single addresses and CIDR ranges, IPv4 and IPv6, with special-purpose ranges (loopback, private, link-local) blocked by default.
+- **Explicit precedence:** block always wins; unresolvable names are denied; the default policy applies to everything else.
+- **DNS-safe connections:** each name is resolved once, and the connection goes only to addresses that passed the policy.
+- **Authentication:** bcrypt-hashed users, only accepted over TLS, with a per-IP lockout after repeated failures.
+- **Limits:** concurrent connections, tunnel duration, idle timeout, header size, dial timeout, bandwidth per direction.
+- **Access logs:** one structured JSON line per request, with the user, destination, resolved IPs, decision, reason, duration and bytes. Credentials are never logged.
+- **Metrics:** Prometheus format on a separate listener, optionally restricted by client address.
+- **Proxy auto-configuration:** serves a PAC file so browsers pick the proxy automatically.
+- **Operations:** YAML configuration validated at startup, reloaded with `SIGHUP`, graceful shutdown that closes open tunnels, and an installer with systemd service.
 
 ## How It Works
 
@@ -263,6 +265,85 @@ The tests run the real proxy in memory against local servers, and the service bi
 
 The IPv6 destination test is skipped when the machine has no IPv6 loopback.
 
+## Installation and Usage
+
+### Requirements
+
+- Go 1.26 or later (see `go.mod`).
+- Linux with systemd for the service installer.
+
+### Run locally (development)
+
+```bash
+./run.sh
+```
+
+Builds the binary into `dist/`, creates a self-signed certificate in `certs/` if missing, and starts Doppler with HTTP on `:5080` and TLS on `:5443`.
+
+### Install as a service
+
+```bash
+sudo ./install.sh
+```
+
+Builds the binary and installs it to `/usr/bin/doppler`. It creates `/etc/doppler/` with the configuration, a self-signed certificate in `/etc/doppler/certs/` (if missing), and `proxy.pac`. It creates the `doppler` system user, installs `doppler.service`, and starts it.
+
+Existing values in `/etc/doppler/config.yml` are kept, but note that the installer copies the repository's `config.yml` over it on each run.
+
+### Remove
+
+```bash
+sudo ./uninstall.sh          # stops the service, keeps /etc/doppler
+sudo ./uninstall.sh --purge  # also removes /etc/doppler and the doppler user
+```
+
+### Configure
+
+Copy `config.yml.example` to `config.yml` and edit it. Every option is documented in the example and in the sections above. The most common ones:
+
+```yaml
+addr: ":5000"              # plain HTTP listener
+tls_addr: ":5443"          # TLS listener, needed for auth and for the PAC
+tls_cert: "/etc/doppler/certs/tls.crt"
+tls_key: "/etc/doppler/certs/tls.key"
+public_host: "proxy.example.com"   # host written into the PAC file
+
+ACL:
+  default: block
+  permit:
+    - "*.example.com"
+    - 10.0.0.0/8
+  block:
+    - "*.ads.example"
+
+auth:
+  enabled: true
+  users:
+    julio: "<bcrypt hash>"   # go run ./cmd/hashpw
+
+metrics_addr: ":9100"
+metrics_allow:
+  - 10.0.0.0/8
+```
+
+Changes are checked at startup, and most of them take effect on reload: `sudo systemctl kill -s HUP doppler`. Settings that need a restart are listed in "Configuration".
+
+### Create a user
+
+```bash
+read -rs P && printf '%s\n' "$P" | go run ./cmd/hashpw -c /etc/doppler/config.yml; unset P
+```
+
+Paste the printed hash into `auth.users` and reload. The password must meet `auth.password` (length, upper case, digit, symbol by default).
+
+### Use it in a browser
+
+Point the browser's automatic proxy configuration at `https://<host>:5443/proxy.pac`, using the TLS certificate you configured. On the same machine, `http://127.0.0.1:5000/proxy.pac` also works.
+
+### Checks
+
+Run `go test ./...` before deploying. CI (`.github/workflows/ci.yml`) runs the same checks on every push.
+
 ## Transparent Traffic Redirection
 
 Doppler can be combined with tools such as [redsocks](https://github.com/darkk/redsocks) to redirect compatible outbound traffic transparently through the proxy.
@@ -291,47 +372,38 @@ Transparent redirection is provided by the surrounding network configuration and
 
 ## Technology Stack
 
-- **Language:** Go
-- **Proxy protocol:** HTTP CONNECT
-- **Configuration:** YAML
+- **Language:** Go 1.26.
+- **Proxy protocols:** HTTP CONNECT, HTTP forwarding, WebSocket upgrade.
+- **Configuration:** YAML, validated at startup.
+- **Dependencies:** `gorilla/mux` (routing), `golang.org/x/crypto/bcrypt` (password hashes), `golang.org/x/net/idna` (internationalized names), `gopkg.in/yaml.v2`.
+- **Observability:** JSON access log on stdout, Prometheus text metrics.
 
 ## Security Considerations
 
-Doppler includes proxy authentication and destination access policies. However, these features should not be interpreted as a complete security boundary.
+Doppler includes authentication and destination policies. They are not a complete security boundary.
 
-Doppler can optionally serve the proxy over TLS on a separate port (`tls_addr`, with `tls_cert` and `tls_key`). The plain listener on `addr` remains available, so TLS is not enforced unless clients are directed to the TLS port.
+- **Credentials travel only over TLS.** With `auth.enabled: true`, the plain listener refuses proxy requests, and the service does not start without `tls_addr`. Clients must trust the certificate (`tls_cert`). The installer generates a self-signed certificate for `localhost` and `127.0.0.1`; for any other host, use a certificate issued for that name.
+- **The plain listener is still open** when auth is off. Keep it on a trusted network or behind a firewall.
+- **The PAC file** decides where all browser traffic goes. It is served over HTTP only to clients on this machine; everything else must use the TLS port.
+- **Metrics** reveal counts and reasons, not destinations or credentials. Restrict the metrics port with `metrics_allow` and a firewall.
+- **Passwords** are stored as bcrypt hashes. Create them with `cmd/hashpw`, which enforces the password policy.
+- **Policies are not a sandbox.** Domain and IP rules depend on DNS answers at request time, and they cannot stop traffic that bypasses the proxy. Test the policy against the destinations you care about.
 
-Consequently, credentials and proxy requests may be exposed when the connection travels across an untrusted network.
-
-For this reason:
-
-- Do not expose the proxy directly to untrusted networks without additional protection.
-- Use a trusted network or an encrypted transport layer.
-- Review authentication and credential handling.
-- Test DNS resolution and access-control behavior (see "Policy evaluation").
-- Do not assume that domain filtering alone prevents every form of network access bypass.
-
-Doppler is an evolving engineering project and should not be considered production-ready for security-critical environments without additional validation.
+Doppler is an evolving engineering project. Validate it in your environment before relying on it for security-critical traffic.
 
 ## Current Status
 
-Doppler is currently a command-line-oriented proxy utility configured through YAML.
+Doppler is a command-line proxy configured through YAML. It runs as a systemd service on Linux, with an installer and an uninstaller.
 
-Its primary functionality is centered on authenticated HTTP CONNECT connections and domain/IP-based outbound access policies.
-
-A graphical management interface and centralized administrative API are not currently part of the project.
+It has no graphical interface and no administrative API. Its management is done through the configuration file, `SIGHUP` reloads, and the access log and metrics endpoints.
 
 ## Future Improvements
 
-Potential areas of development include:
-
-- More comprehensive access-control tests.
-- Improved DNS resolution and IP policy handling.
-- Connection and access logs.
-- Monitoring and operational metrics.
-- Configuration reload without restarting the service.
-- Administrative API.
+- Administrative API for policy and user management.
 - Optional web-based management interface.
+- Per-user policies (currently the policy is global; authentication identifies the user in logs and metrics only).
+- Connection-level metrics that also count active tunnels by reason.
+- Automated installer tests and a test for the uninstaller.
 
 ## Origin
 
