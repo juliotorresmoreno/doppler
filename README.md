@@ -166,6 +166,29 @@ Never logged: passwords, `Proxy-Authorization` headers, request paths, query str
 
 Failed logins and blocked IPs are also logged on the `[AUTH]` lines, regardless of `access_log`.
 
+## Metrics
+
+Metrics are served on their own HTTP listener, separate from the proxy ports, so a collector can scrape them without touching proxy traffic. It is off unless `metrics_addr` is set:
+
+```yaml
+metrics_addr: ":9100"               # e.g. 0.0.0.0:9100 to accept scrapes from the network
+metrics_allow:                       # optional: only these IPs or CIDR ranges may scrape
+  - 10.0.0.0/8
+```
+
+`GET /metrics` returns counters in the Prometheus text format. With `metrics_allow` empty, any client that can reach `metrics_addr` can read them, so restrict the port with a firewall or with `metrics_allow`. Other paths return `404`.
+
+| Metric | Labels | Meaning |
+|---|---|---|
+| `doppler_connections_active` | | Proxied connections in progress (gauge). |
+| `doppler_requests_total` | `event` | Proxied requests: `connect`, `http`, `websocket`, `unknown`. |
+| `doppler_decisions_total` | `decision`, `reason` | Allow and deny decisions, with the reason (see the access log reasons). DNS failures are `reason="dns_failure"`. |
+| `doppler_auth_failures_total` | `reason` | Failed authentication: `auth_missing`, `auth_blocked`, `auth_failed`, `auth_requires_tls`. |
+| `doppler_connection_errors_total` | `reason` | Errors connecting upstream or internally. |
+| `doppler_bytes_total` | `direction` | Bytes transferred, `up` (client to destination) or `down`. |
+
+Metrics are kept in memory and reset when the service restarts. They are updated even when `access_log` is off.
+
 ## Resource limits
 
 | Option | Default | Effect |

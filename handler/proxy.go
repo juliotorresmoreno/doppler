@@ -50,33 +50,33 @@ func ProxyHandler(fallback http.Handler) http.Handler {
 
 // acquire takes a connection slot. It returns false when the limit is reached.
 func (h *Proxy) acquire() bool {
-	if h.slots == nil {
-		return true
+	if h.slots != nil {
+		select {
+		case h.slots <- struct{}{}:
+		default:
+			return false
+		}
 	}
-	select {
-	case h.slots <- struct{}{}:
-		return true
-	default:
-		return false
-	}
+	utils.ActiveConnections.Add(1)
+	return true
 }
 
 func (h *Proxy) release() {
+	utils.ActiveConnections.Add(-1)
 	if h.slots != nil {
 		<-h.slots
 	}
 }
 
-// access returns a new event for a proxied request, or nil when access logging is off.
+// access starts the event for a proxied request. Metrics are updated for every
+// request; the JSON line is written only when access logging is on.
 func (h *Proxy) access(event string, req *http.Request) *utils.AccessEvent {
-	if !h.accessLog {
-		return nil
-	}
 	return utils.NewAccessEvent(event, clientIP(req), req.Method, req.Host)
 }
 
-func emit(ev *utils.AccessEvent) {
-	if ev != nil {
+func (h *Proxy) finish(ev *utils.AccessEvent) {
+	utils.ObserveAccess(ev)
+	if h.accessLog {
 		ev.Emit()
 	}
 }
@@ -100,7 +100,7 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 		event = "unknown"
 	}
 	ev := h.access(event, req)
-	defer emit(ev)
+	defer h.finish(ev)
 
 	if !h.acquire() {
 		if ev != nil {

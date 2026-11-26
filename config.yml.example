@@ -5,7 +5,9 @@ tls_cert: ""       # path to PEM certificate, required when tls_addr is set
 tls_key: ""        # path to PEM private key, required when tls_addr is set
 public_host: ""    # domain used in proxy.pac; empty = Host header of the request
 logger: false
-access_log: true   # one structured JSON line per proxied request, on stdout
+access_log: true
+# metrics_addr: ":9100"        # separate listener for /metrics; empty = disabled
+# metrics_allow: ["10.0.0.0/8"]  # IPs or CIDR ranges allowed to scrape; empty = any client   # one structured JSON line per proxied request, on stdout
 limit: 5000 # in KB/s
 read_timeout: 30
 idle_timeout: 300 # seconds without traffic before a tunnel is closed; 0 = never

@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/juliotorresmoreno/doppler/config"
 	"github.com/juliotorresmoreno/doppler/handler"
+	"github.com/juliotorresmoreno/doppler/internal/utils"
 	"github.com/juliotorresmoreno/doppler/middleware"
 )
 
@@ -53,4 +54,21 @@ func maxHeaderBytes(conf config.Config) int {
 		return conf.MaxHeaderBytes
 	}
 	return http.DefaultMaxHeaderBytes
+}
+
+// ConfigureMetrics returns the HTTP server that exposes /metrics on its own
+// address, or nil when metrics_addr is empty.
+func ConfigureMetrics() *http.Server {
+	conf, _ := config.GetConfig()
+	if conf.MetricsAddr == "" {
+		return nil
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", utils.MetricsHandler(conf.MetricsAllow))
+	return &http.Server{
+		Addr:         conf.MetricsAddr,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
 }

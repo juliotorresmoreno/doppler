@@ -27,6 +27,7 @@ func main() {
 		log.Fatal("invalid configuration: ", err)
 	}
 	svr, tlsSvr := server.Configure()
+	metricsSvr := server.ConfigureMetrics()
 
 	if tlsSvr != nil {
 		if conf.TLSCert == "" || conf.TLSKey == "" {
@@ -60,6 +61,19 @@ func main() {
 		}
 	}()
 
+	if metricsSvr != nil {
+		metricsConn, err := net.Listen("tcp", metricsSvr.Addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println("Metrics listening on " + metricsSvr.Addr)
+		go func() {
+			if err := metricsSvr.Serve(metricsConn); err != nil && err != http.ErrServerClosed {
+				log.Fatal(err)
+			}
+		}()
+	}
+
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	<-stop.Done()
@@ -69,6 +83,9 @@ func main() {
 	handler.CloseTunnels()
 	ctx, done := context.WithTimeout(context.Background(), shutdownGrace)
 	defer done()
+	if metricsSvr != nil {
+		metricsSvr.Shutdown(ctx)
+	}
 	if tlsSvr != nil {
 		tlsSvr.Shutdown(ctx)
 	}

@@ -65,6 +65,12 @@ type Config struct {
 	MaxHeaderBytes int `yaml:"max_header_bytes"`
 	// AccessLog writes one structured JSON line per proxied request to stdout.
 	AccessLog bool `yaml:"access_log"`
+	// MetricsAddr is a separate HTTP listener that serves /metrics only, for a
+	// collector. Empty disables it.
+	MetricsAddr string `yaml:"metrics_addr"`
+	// MetricsAllow lists the IPs or CIDR ranges allowed to scrape /metrics.
+	// Empty allows any client that can reach MetricsAddr.
+	MetricsAllow []string `yaml:"metrics_allow"`
 }
 
 var config interface{}
