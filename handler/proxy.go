@@ -41,7 +41,7 @@ func (h *Proxy) Handle(res http.ResponseWriter, req *http.Request) {
 
 	if conf.Auth.Enabled {
 		authHeader := req.Header.Get("Proxy-Authorization")
-		if err := h.BasicAuth(authHeader); err != nil {
+		if err := h.BasicAuth(authHeader, clientIP(req)); err != nil {
 			h.AuthRequired(res, req)
 			h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusProxyAuthRequired)
 			return

@@ -10,8 +10,8 @@ read_timeout: 30
 write_timeout: 120
 auth:
   enabled: false
-  users:
-    admin: 240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9 # admin123 in sha256
+  # users: name: bcrypt hash (make one with: go run ./cmd/hashpw)
+  users: {}
 ACL:
   default: permit
   permit:
