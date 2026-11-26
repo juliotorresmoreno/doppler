@@ -1,34 +1,48 @@
 package helper
 
 import (
+	"fmt"
 	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-func VerifyPassword(s string) (valid, sevenOrMore, number, upper, special bool) {
-	letters := 0
+// Policy is the set of requirements a new password must meet.
+type Policy struct {
+	MinLength     int
+	RequireUpper  bool
+	RequireDigit  bool
+	RequireSymbol bool
+}
+
+// CheckPolicy returns one message per requirement the password does not meet.
+// An empty result means the password is acceptable.
+func CheckPolicy(s string, p Policy) []string {
+	var problems []string
+	if len([]rune(s)) < p.MinLength {
+		problems = append(problems, fmt.Sprintf("must be at least %d characters", p.MinLength))
+	}
+	var upper, digit, symbol bool
 	for _, c := range s {
 		switch {
-		case unicode.IsNumber(c):
-			number = true
 		case unicode.IsUpper(c):
 			upper = true
-			letters++
+		case unicode.IsDigit(c):
+			digit = true
 		case unicode.IsPunct(c) || unicode.IsSymbol(c):
-			special = true
-		case unicode.IsLetter(c) || c == ' ':
-			letters++
-		default:
-		}
-		valid = sevenOrMore && number && upper && special
-		if valid {
-			return
+			symbol = true
 		}
 	}
-	sevenOrMore = letters >= 7
-	valid = sevenOrMore && number && upper && special
-	return
+	if p.RequireUpper && !upper {
+		problems = append(problems, "must contain an uppercase letter")
+	}
+	if p.RequireDigit && !digit {
+		problems = append(problems, "must contain a digit")
+	}
+	if p.RequireSymbol && !symbol {
+		problems = append(problems, "must contain a symbol")
+	}
+	return problems
 }
 
 func GeneratePassword(password string) (string, error) {

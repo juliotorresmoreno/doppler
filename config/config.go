@@ -17,8 +17,20 @@ type Credentials struct {
 }
 
 type Auth struct {
-	Enabled bool              `yaml:"enabled"`
-	Users   map[string]string `yaml:"users"`
+	Enabled          bool              `yaml:"enabled"`
+	Users            map[string]string `yaml:"users"`
+	MaxFailures      int               `yaml:"max_failures"`
+	FailureWindowMin int               `yaml:"failure_window_minutes"`
+	BlockMin         int               `yaml:"block_minutes"`
+	Password         PasswordPolicy    `yaml:"password"`
+}
+
+// PasswordPolicy is enforced by cmd/hashpw when a new credential is created.
+type PasswordPolicy struct {
+	MinLength     int  `yaml:"min_length"`
+	RequireUpper  bool `yaml:"require_upper"`
+	RequireDigit  bool `yaml:"require_digit"`
+	RequireSymbol bool `yaml:"require_symbol"`
 }
 
 type ACL struct {
@@ -81,8 +93,17 @@ func GetConfig() (Config, error) {
 		ReadTimeout:  30,
 		WriteTimeout: 120,
 		Auth: Auth{
-			Enabled: false,
-			Users:   make(map[string]string),
+			Enabled:          false,
+			Users:            make(map[string]string),
+			MaxFailures:      5,
+			FailureWindowMin: 15,
+			BlockMin:         15,
+			Password: PasswordPolicy{
+				MinLength:     10,
+				RequireUpper:  true,
+				RequireDigit:  true,
+				RequireSymbol: true,
+			},
 		},
 		ACL: ACL{
 			Default: "permit",
@@ -106,4 +127,10 @@ func GetConfig() (Config, error) {
 	config = result
 
 	return config.(Config), nil
+}
+
+// Set replaces the loaded configuration. It is meant for tests and for code
+// that embeds the proxy handler.
+func Set(c Config) {
+	config = c
 }

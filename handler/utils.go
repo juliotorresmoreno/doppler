@@ -1,16 +1,14 @@
 package handler
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/juliotorresmoreno/doppler/config"
 	"golang.org/x/crypto/bcrypt"
@@ -33,8 +31,29 @@ const authenticationRequiredHTML = `<html>
 
 var errUnauthorized = errors.New("Unauthorized")
 
-// authLimiter blocks an IP after too many failed logins.
-var authLimiter = newFailLimiter(maxAuthFailures, authFailWindow, authBlockDuration)
+// authLimiter blocks an IP after too many failed logins. It is built from the
+// auth settings the first time credentials are checked.
+var (
+	authLimiterOnce sync.Once
+	authLimiter     *failLimiter
+)
+
+func initAuthLimiter(a config.Auth) {
+	authLimiterOnce.Do(func() {
+		maxFails, window, block := a.MaxFailures, a.FailureWindowMin, a.BlockMin
+		if maxFails <= 0 {
+			maxFails = 5
+		}
+		if window <= 0 {
+			window = 15
+		}
+		if block <= 0 {
+			block = 15
+		}
+		authLimiter = newFailLimiter(maxFails,
+			time.Duration(window)*time.Minute, time.Duration(block)*time.Minute)
+	})
+}
 
 // dummyHash is compared when the user does not exist, so a missing user takes
 // the same time as a wrong password.
@@ -53,6 +72,7 @@ func (h *Proxy) BasicAuth(credentials, clientIP string) error {
 	if credentials == "" {
 		return errUnauthorized
 	}
+	initAuthLimiter(conf.Auth)
 	if authLimiter.blocked(clientIP) {
 		log.Printf("[AUTH] blocked ip=%s (too many failed attempts)", clientIP)
 		return errUnauthorized
@@ -67,7 +87,7 @@ func (h *Proxy) BasicAuth(credentials, clientIP string) error {
 	stored, exists := conf.Auth.Users[username]
 	var valid bool
 	if exists {
-		valid = verifyPassword(username, stored, password)
+		valid = verifyPassword(stored, password)
 	} else {
 		dummyOnce.Do(func() {
 			dummyHash, _ = bcrypt.GenerateFromPassword([]byte("doppler-dummy"), bcrypt.DefaultCost)
@@ -100,24 +120,12 @@ func parseBasic(credentials string) (string, string, bool) {
 	return parts[0], parts[1], true
 }
 
-// verifyPassword accepts bcrypt hashes. Legacy unsalted SHA-256 hashes are
-// still accepted so existing configs keep working, with a warning to re-hash.
-func verifyPassword(username, stored, password string) bool {
-	if strings.HasPrefix(stored, "$2") {
-		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
+// verifyPassword accepts only bcrypt hashes. Any other stored format is rejected.
+func verifyPassword(stored, password string) bool {
+	if !strings.HasPrefix(stored, "$2") {
+		return false
 	}
-	if len(stored) == sha256.Size*2 {
-		if _, err := hex.DecodeString(stored); err == nil {
-			// Legacy hashes were computed on the password with surrounding spaces trimmed.
-			sum := sha256.Sum256([]byte(strings.Trim(password, " ")))
-			ok := subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(strings.ToLower(stored))) == 1
-			if ok {
-				log.Printf("[AUTH] user %q uses a legacy SHA-256 hash; regenerate it with cmd/hashpw", username)
-			}
-			return ok
-		}
-	}
-	return false
+	return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
 }
 
 func authFailed(clientIP, username string) {

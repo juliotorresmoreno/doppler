@@ -60,38 +60,57 @@ Client Application
 
 ## Access Control
 
-Doppler supports three main policy components:
+Doppler supports three policy components:
 
-- `permit`: Destinations explicitly allowed.
-- `block`: Destinations explicitly denied.
-- `defaultPolicy`: The decision applied when no explicit rule matches.
+- `permit`: destinations explicitly allowed.
+- `block`: destinations explicitly denied.
+- `defaultPolicy` (`ACL.default`): the decision applied when no rule matches. Use `block` for restrictive environments.
 
-For restrictive environments, a default-deny policy is the recommended starting point.
-
-Conceptually:
+Configuration lives under `ACL` in `config.yml`:
 
 ```yaml
-defaultPolicy: block
-
-permit:
-  - example.com
-  - api.example.com
-
-block:
-  - blocked.example.com
+ACL:
+  default: block
+  permit:
+    - example.com          # exact name only
+    - "*.example.com"      # any subdomain of example.com
+    - 203.0.113.10         # single IP address
+    - 10.0.0.0/8          # CIDR range
+  block:
+    - "*.blocked.example"
+    - 198.51.100.0/24
 ```
 
-The exact configuration structure should follow the implementation's current configuration schema.
+### Entry formats
 
-### Policy Evaluation
+| Entry | Matches |
+|---|---|
+| `example.com` | exactly `example.com`; **not** its subdomains |
+| `*.example.com` | any subdomain at any depth (`a.example.com`, `a.b.example.com`); **not** `example.com` itself |
+| `203.0.113.10` | that IP address |
+| `10.0.0.0/8` | every address in the range (IPv4 or IPv6) |
 
-Doppler evaluates both the requested hostname and the IP addresses obtained through DNS resolution.
+Names are case-insensitive and a trailing dot is ignored. A wildcard is only accepted as a leading `*.`; `*` alone matches nothing. A subdomain is never matched by an exact name, so list `example.com` and `*.example.com` both if you want the apex and its subdomains.
 
-The current evaluation behavior gives block rules priority over permit rules when the same value matches both lists.
+Name entries are compared with the requested hostname. Address entries (single IP or CIDR) are compared with **every address the hostname resolves to**, and with the address itself when the request is for an IP literal.
 
-Unmatched destinations are evaluated using the configured default policy.
+### Policy evaluation
 
-**Important:** Domain and IP-based access policies have limitations that should be considered when designing security-sensitive deployments. DNS resolution behavior, multiple resolved addresses, and IP-based access should be tested carefully.
+Rules are evaluated in this order. The first matching step decides:
+
+1. **Block on name:** the requested hostname matches a `block` entry → **deny**.
+2. **Resolve once:** the hostname is resolved one time. The resolved addresses are used for every later check and for the connection.
+3. **Block on address:** any resolved address matches a `block` entry (single IP or CIDR) → **deny**. This applies even when the name is permitted, and even when only one of several addresses is blocked.
+4. **Permit on name:** the hostname matches a `permit` entry → **allow**.
+5. **Permit on address:** any resolved address matches a `permit` entry → **allow**.
+6. **DNS failure:** the hostname cannot be resolved and was not allowed in step 4 → **deny**, regardless of `defaultPolicy`. Explicitly permitted names still go through, and the connection then fails with an error.
+7. **Default:** otherwise `defaultPolicy` applies.
+
+Block always beats permit. Connections are made only to the addresses that passed step 3, so DNS cannot answer differently between the check and the connection.
+
+These rules apply to CONNECT tunnels, plain HTTP forwarding, and WebSocket requests.
+
+**Limitations:** the decision is based on the DNS answer at request time. Hosts behind shared IPs (CDNs, load balancers) are matched by those shared addresses, so an address rule can block or allow more than one site. Test the policy against the destinations you care about before relying on it.
 
 ## Transparent Traffic Redirection
 
@@ -138,7 +157,7 @@ For this reason:
 - Do not expose the proxy directly to untrusted networks without additional protection.
 - Use a trusted network or an encrypted transport layer.
 - Review authentication and credential handling.
-- Test DNS resolution and access-control behavior.
+- Test DNS resolution and access-control behavior (see "Policy evaluation").
 - Do not assume that domain filtering alone prevents every form of network access bypass.
 
 Doppler is an evolving engineering project and should not be considered production-ready for security-critical environments without additional validation.

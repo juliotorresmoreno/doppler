@@ -31,33 +31,27 @@ func TestVerifyPasswordBcrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !verifyPassword("alice", string(hash), "correct horse") {
+	if !verifyPassword(string(hash), "correct horse") {
 		t.Error("correct password rejected")
 	}
-	if verifyPassword("alice", string(hash), "wrong") {
+	if verifyPassword(string(hash), "wrong") {
 		t.Error("wrong password accepted")
 	}
-	if verifyPassword("alice", string(hash), "correct horse ") {
+	if verifyPassword(string(hash), "correct horse ") {
 		t.Error("bcrypt must not trim spaces")
 	}
 }
 
-func TestVerifyPasswordLegacySHA256(t *testing.T) {
+func TestVerifyPasswordRejectsLegacySHA256(t *testing.T) {
 	sum := sha256.Sum256([]byte("admin123"))
 	legacy := hex.EncodeToString(sum[:])
-	if !verifyPassword("admin", legacy, "admin123") {
-		t.Error("legacy hash should still verify")
-	}
-	if !verifyPassword("admin", legacy, "  admin123  ") {
-		t.Error("legacy hash trims surrounding spaces, as before")
-	}
-	if verifyPassword("admin", legacy, "admin124") {
-		t.Error("legacy wrong password accepted")
+	if verifyPassword(legacy, "admin123") {
+		t.Error("unsalted SHA-256 hashes must no longer be accepted")
 	}
 }
 
 func TestVerifyPasswordUnknownFormat(t *testing.T) {
-	if verifyPassword("u", "plaintext", "plaintext") {
+	if verifyPassword("plaintext", "plaintext") {
 		t.Error("plaintext stored password must never be accepted")
 	}
 }

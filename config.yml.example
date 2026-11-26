@@ -10,6 +10,17 @@ read_timeout: 30
 write_timeout: 120
 auth:
   enabled: false
+  # Brute-force protection: block an IP after max_failures failed logins within
+  # failure_window_minutes, for block_minutes.
+  max_failures: 5
+  failure_window_minutes: 15
+  block_minutes: 15
+  # Policy applied by cmd/hashpw when creating a password.
+  password:
+    min_length: 10
+    require_upper: true
+    require_digit: true
+    require_symbol: true
   # enabled requires tls_addr; credentials are only accepted over TLS.
   # users: name: bcrypt hash (make one with: go run ./cmd/hashpw)
   users: {}

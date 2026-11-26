@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -81,18 +83,21 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 		host, _, _ = net.SplitHostPort(host)
 	}
 
-	if !utils.IsAllowedHost(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default) {
+	ips, ok := utils.Authorize(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default)
+	if !ok {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusForbidden)
 		return
 	}
 
 	if utils.IsWebSocket(req) {
-		h.handleWebSocket(w, req)
+		h.handleWebSocket(w, req, ips)
 		return
 	}
 
-	resp, err := h.transport().RoundTrip(req)
+	tr := h.transport()
+	tr.DialContext = dialApproved(ips)
+	resp, err := tr.RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusServiceUnavailable)
@@ -107,7 +112,7 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 	h.Logger.Register(req.Host, req.Method, resp.StatusCode)
 }
 
-func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request) {
+func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []net.IP) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Hijack not supported", http.StatusInternalServerError)
@@ -115,18 +120,19 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	clientConn, _, err := hj.Hijack()
+	rawConn, rw, err := hj.Hijack()
 	if err != nil {
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusInternalServerError)
 		return
 	}
+	clientConn := helper.NewBufferedConn(rawConn, rw.Reader)
 
 	hostPort := req.Host
 	if !strings.Contains(hostPort, ":") {
 		hostPort += ":80"
 	}
 
-	targetConn, err := net.Dial("tcp", hostPort)
+	targetConn, err := dialApprovedAddr(ips, hostPort)
 	if err != nil {
 		clientConn.Close()
 		h.Logger.RegisterWithLevel(utils.ERROR, hostPort, "WEBSOCKET", 0)
@@ -163,13 +169,14 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 		host, _, _ = net.SplitHostPort(host)
 	}
 
-	if !utils.IsAllowedHost(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default) {
+	ips, ok := utils.Authorize(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default)
+	if !ok {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, "CONNECT", http.StatusForbidden)
 		return
 	}
 
-	destConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
+	destConn, err := dialApprovedAddr(ips, req.Host)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusServiceUnavailable)
@@ -191,4 +198,43 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 		go io.Copy(clientConn, destConn)
 	}
 	h.Logger.RegisterWithLevel(utils.INFO, req.Host, "CONNECT", http.StatusOK)
+}
+
+// dialApproved returns a DialContext that connects only to the addresses the
+// ACL approved, ignoring the name the transport asks for.
+func dialApproved(ips []net.IP) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		_, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		return dialIPs(ctx, network, ips, port)
+	}
+}
+
+// dialApprovedAddr dials hostPort ("host:port") using only the approved addresses.
+func dialApprovedAddr(ips []net.IP, hostPort string) (net.Conn, error) {
+	_, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return dialIPs(ctx, "tcp", ips, port)
+}
+
+func dialIPs(ctx context.Context, network string, ips []net.IP, port string) (net.Conn, error) {
+	if len(ips) == 0 {
+		return nil, errors.New("no approved address to connect to")
+	}
+	var d net.Dialer
+	var lastErr error
+	for _, ip := range ips {
+		conn, err := d.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }

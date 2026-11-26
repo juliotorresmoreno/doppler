@@ -29,35 +29,53 @@ func CopyHeader(dst, src http.Header) {
 	}
 }
 
-func GetIpAddress(host string) []net.IP {
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return make([]net.IP, 0)
-	}
-	return ips
+// GetIpAddress resolves host. The error is returned so callers can tell a
+// failed lookup apart from a host with no addresses.
+func GetIpAddress(host string) ([]net.IP, error) {
+	return LookupIP(host)
 }
 
-func IsAllowedHost(host string, permitList, blockList []string, defaultPolicy string) bool {
-	hosts := make([]string, 0)
-	hosts = append(hosts, host)
+// LookupIP resolves a host name. It is a variable so tests can supply fixed
+// answers instead of depending on the machine's DNS.
+var LookupIP = net.LookupIP
 
-	for _, ip := range GetIpAddress(host) {
-		hosts = append(hosts, ip.String())
+// Authorize decides whether host may be reached. It resolves the name exactly
+// once and returns the addresses the caller must connect to; connecting to the
+// name again would let DNS answer differently and bypass the IP rules.
+//
+// Precedence (see README, "Policy evaluation"):
+//  1. A name on the block list, or any resolved address on the block list
+//     (single IP or CIDR), denies.
+//  2. A name on the permit list allows.
+//  3. A resolved address on the permit list allows.
+//  4. A name that cannot be resolved is denied (fail closed).
+//  5. Anything else follows defaultPolicy.
+func Authorize(host string, permitList, blockList []string, defaultPolicy string) ([]net.IP, bool) {
+	if matchName(host, blockList) {
+		return nil, false
 	}
 
-	for _, host := range hosts {
-		for _, blocked := range blockList {
-			if strings.EqualFold(host, blocked) {
-				return false
-			}
+	ips, err := GetIpAddress(host)
+	if err != nil {
+		if matchName(host, permitList) {
+			return nil, true // allowed by name; the dial will fail and report it
 		}
+		return nil, false
+	}
 
-		for _, permitted := range permitList {
-			if strings.EqualFold(host, permitted) {
-				return true
-			}
+	for _, ip := range ips {
+		if matchIP(ip, blockList) {
+			return nil, false
+		}
+	}
+	if matchName(host, permitList) {
+		return ips, true
+	}
+	for _, ip := range ips {
+		if matchIP(ip, permitList) {
+			return ips, true
 		}
 	}
 
-	return strings.EqualFold(defaultPolicy, "permit")
+	return ips, strings.EqualFold(defaultPolicy, "permit")
 }

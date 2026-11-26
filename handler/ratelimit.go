@@ -5,12 +5,6 @@ import (
 	"time"
 )
 
-const (
-	maxAuthFailures   = 5
-	authFailWindow    = 15 * time.Minute
-	authBlockDuration = 15 * time.Minute
-)
-
 type failEntry struct {
 	count        int
 	windowStart  time.Time
