@@ -25,22 +25,21 @@ const (
 	reasonInternalError      = "internal_error"
 	reasonShuttingDown       = "shutting_down"
 	reasonUnsupported        = "unsupported_request"
+	reasonInvalidRequest     = "invalid_request"
 )
 
 type Proxy struct {
 	Fallback http.Handler
 	Logger   *utils.LoggerBD
 	// slots limits concurrent proxied connections; nil means unlimited.
-	slots     chan struct{}
-	accessLog bool
+	slots chan struct{}
 }
 
 func ProxyHandler(fallback http.Handler) http.Handler {
 	conf, _ := config.GetConfig()
 	p := &Proxy{
-		Fallback:  fallback,
-		Logger:    utils.NewLogger(),
-		accessLog: conf.AccessLog,
+		Fallback: fallback,
+		Logger:   utils.NewLogger(),
 	}
 	if conf.MaxConnections > 0 {
 		p.slots = make(chan struct{}, conf.MaxConnections)
@@ -76,7 +75,7 @@ func (h *Proxy) access(event string, req *http.Request) *utils.AccessEvent {
 
 func (h *Proxy) finish(ev *utils.AccessEvent) {
 	utils.ObserveAccess(ev)
-	if h.accessLog {
+	if conf, _ := config.GetConfig(); conf.AccessLog {
 		ev.Emit()
 	}
 }
@@ -222,7 +221,7 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request, ev *utils.A
 	// left open waiting for the transport's idle timeout.
 	tr := h.transport()
 	defer tr.CloseIdleConnections()
-	tr.DialContext = dialApproved(d.IPs)
+	tr.DialContext = dialApproved(d.IPs, dialTimeout(conf))
 	body := &countingReader{ReadCloser: req.Body}
 	req.Body = body
 	resp, err := tr.RoundTrip(req)
@@ -271,7 +270,8 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []
 		hostPort += ":80"
 	}
 
-	targetConn, err := dialApprovedAddr(ips, hostPort)
+	conf, _ := config.GetConfig()
+	targetConn, err := dialApprovedAddr(ips, hostPort, dialTimeout(conf))
 	if err != nil {
 		clientConn.Close()
 		if ev != nil {
@@ -301,7 +301,6 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []
 		h.Logger.RegisterWithLevel(utils.ERROR, hostPort, "WEBSOCKET", 0)
 		return
 	}
-	conf, _ := config.GetConfig()
 	if ev != nil {
 		ev.Status = http.StatusSwitchingProtocols
 	}
@@ -330,6 +329,17 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request, ev *util
 		return
 	}
 
+	// CONNECT must name host:port; anything else is a malformed request.
+	if _, port, err := net.SplitHostPort(req.Host); err != nil || port == "" {
+		if ev != nil {
+			ev.SetDecision(false, reasonInvalidRequest, nil)
+			ev.Status = http.StatusBadRequest
+		}
+		http.Error(w, "Bad Request: CONNECT needs host:port", http.StatusBadRequest)
+		h.Logger.RegisterWithLevel(utils.WARN, req.Host, "CONNECT", http.StatusBadRequest)
+		return
+	}
+
 	host := req.URL.Hostname()
 	if strings.Contains(host, ":") {
 		host, _, _ = net.SplitHostPort(host)
@@ -348,7 +358,7 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request, ev *util
 		return
 	}
 
-	destConn, err := dialApprovedAddr(d.IPs, req.Host)
+	destConn, err := dialApprovedAddr(d.IPs, req.Host, dialTimeout(conf))
 	if err != nil {
 		// The detail stays in the log; the client only learns it could not connect.
 		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
@@ -405,32 +415,40 @@ func maxTunnel(conf config.Config) time.Duration {
 
 // dialApproved returns a DialContext that connects only to the addresses the
 // ACL approved, ignoring the name the transport asks for.
-func dialApproved(ips []net.IP) func(ctx context.Context, network, addr string) (net.Conn, error) {
+func dialApproved(ips []net.IP, timeout time.Duration) func(ctx context.Context, network, addr string) (net.Conn, error) {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		_, port, err := net.SplitHostPort(addr)
 		if err != nil {
 			return nil, err
 		}
-		return dialIPs(ctx, network, ips, port)
+		return dialIPs(ctx, network, ips, port, timeout)
 	}
 }
 
 // dialApprovedAddr dials hostPort ("host:port") using only the approved addresses.
-func dialApprovedAddr(ips []net.IP, hostPort string) (net.Conn, error) {
+func dialApprovedAddr(ips []net.IP, hostPort string, timeout time.Duration) (net.Conn, error) {
 	_, port, err := net.SplitHostPort(hostPort)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return dialIPs(ctx, "tcp", ips, port)
+	return dialIPs(ctx, "tcp", ips, port, timeout)
 }
 
-func dialIPs(ctx context.Context, network string, ips []net.IP, port string) (net.Conn, error) {
+// dialTimeout returns the configured dial timeout, defaulting to 10 seconds.
+func dialTimeout(conf config.Config) time.Duration {
+	if conf.DialTimeout > 0 {
+		return time.Duration(conf.DialTimeout) * time.Second
+	}
+	return 10 * time.Second
+}
+
+func dialIPs(ctx context.Context, network string, ips []net.IP, port string, timeout time.Duration) (net.Conn, error) {
 	if len(ips) == 0 {
 		return nil, errors.New("no approved address to connect to")
 	}
-	var d net.Dialer
+	d := net.Dialer{Timeout: timeout}
 	var lastErr error
 	for _, ip := range ips {
 		conn, err := d.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))

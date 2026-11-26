@@ -64,7 +64,7 @@ func ConfigureMetrics() *http.Server {
 		return nil
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", utils.MetricsHandler(conf.MetricsAllow))
+	mux.Handle("/metrics", utils.MetricsHandler())
 	return &http.Server{
 		Addr:         conf.MetricsAddr,
 		Handler:      mux,

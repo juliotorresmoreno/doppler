@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/juliotorresmoreno/doppler/config"
@@ -36,28 +37,28 @@ var (
 	errAuthFailed   = errors.New("invalid credentials")
 )
 
-// authLimiter blocks an IP after too many failed logins. It is built from the
-// auth settings the first time credentials are checked.
-var (
-	authLimiterOnce sync.Once
-	authLimiter     *failLimiter
-)
+// authLimiter blocks an IP after too many failed logins. It is rebuilt when the
+// auth limits change on reload; otherwise it keeps its state.
+var authLimiter atomic.Pointer[failLimiter]
 
-func initAuthLimiter(a config.Auth) {
-	authLimiterOnce.Do(func() {
-		maxFails, window, block := a.MaxFailures, a.FailureWindowMin, a.BlockMin
-		if maxFails <= 0 {
-			maxFails = 5
-		}
-		if window <= 0 {
-			window = 15
-		}
-		if block <= 0 {
-			block = 15
-		}
-		authLimiter = newFailLimiter(maxFails,
-			time.Duration(window)*time.Minute, time.Duration(block)*time.Minute)
-	})
+// limiterFor returns the limiter for the given auth settings.
+func limiterFor(a config.Auth) *failLimiter {
+	maxFails, window, block := a.MaxFailures, time.Duration(a.FailureWindowMin)*time.Minute, time.Duration(a.BlockMin)*time.Minute
+	if maxFails <= 0 {
+		maxFails = 5
+	}
+	if window <= 0 {
+		window = 15 * time.Minute
+	}
+	if block <= 0 {
+		block = 15 * time.Minute
+	}
+	if cur := authLimiter.Load(); cur != nil && cur.maxFails == maxFails && cur.window == window && cur.blockFor == block {
+		return cur
+	}
+	fresh := newFailLimiter(maxFails, window, block)
+	authLimiter.Store(fresh)
+	return fresh
 }
 
 // dummyHash is compared when the user does not exist, so a missing user takes
@@ -80,15 +81,15 @@ func (h *Proxy) BasicAuth(credentials, clientIP string) (string, error) {
 	if credentials == "" {
 		return "", errAuthMissing
 	}
-	initAuthLimiter(conf.Auth)
-	if authLimiter.blocked(clientIP) {
+	lim := limiterFor(conf.Auth)
+	if lim.blocked(clientIP) {
 		log.Printf("[AUTH] blocked ip=%s (too many failed attempts)", clientIP)
 		return "", errAuthBlocked
 	}
 
 	username, password, ok := parseBasic(credentials)
 	if !ok {
-		authFailed(clientIP, "")
+		authFailed(lim, clientIP, "")
 		return "", errAuthFailed
 	}
 
@@ -104,10 +105,10 @@ func (h *Proxy) BasicAuth(credentials, clientIP string) (string, error) {
 	}
 
 	if !valid {
-		authFailed(clientIP, username)
+		authFailed(lim, clientIP, username)
 		return "", errAuthFailed
 	}
-	authLimiter.reset(clientIP)
+	lim.reset(clientIP)
 	return username, nil
 }
 
@@ -136,8 +137,8 @@ func verifyPassword(stored, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
 }
 
-func authFailed(clientIP, username string) {
-	authLimiter.fail(clientIP)
+func authFailed(lim *failLimiter, clientIP, username string) {
+	lim.fail(clientIP)
 	log.Printf("[AUTH] failed login user=%q ip=%s", username, clientIP)
 }
 

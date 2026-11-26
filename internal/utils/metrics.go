@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+
+	"github.com/juliotorresmoreno/doppler/config"
 	"net/http"
 	"sort"
 	"strings"
@@ -87,11 +89,13 @@ func WriteMetrics(w io.Writer) {
 	}
 }
 
-// MetricsHandler serves the metrics. When allow is not empty, only clients whose
-// address matches one of its IPs or CIDR ranges get the metrics; others get 404.
-func MetricsHandler(allow []string) http.Handler {
+// MetricsHandler serves the metrics. When metrics_allow is not empty (read on
+// each request, so reloads apply), only clients whose address matches one of its
+// IPs or CIDR ranges get the metrics; others get 404.
+func MetricsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if len(allow) > 0 {
+		conf, _ := config.GetConfig()
+		if allow := conf.MetricsAllow; len(allow) > 0 {
 			host, _, err := net.SplitHostPort(r.RemoteAddr)
 			if err != nil {
 				host = r.RemoteAddr

@@ -4,6 +4,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/juliotorresmoreno/doppler/config"
 )
 
 func resetMetrics() {
@@ -55,10 +57,11 @@ func TestObserveAccessCountsDecisionsAndBytes(t *testing.T) {
 func TestMetricsAllowList(t *testing.T) {
 	resetMetrics()
 	scrape := func(allow []string, remote string) int {
+		config.Set(config.Config{MetricsAllow: allow})
 		req := httptest.NewRequest("GET", "/metrics", nil)
 		req.RemoteAddr = remote
 		rec := httptest.NewRecorder()
-		MetricsHandler(allow).ServeHTTP(rec, req)
+		MetricsHandler().ServeHTTP(rec, req)
 		if rec.Code == 200 && !strings.Contains(rec.Body.String(), "doppler_connections_active") {
 			t.Errorf("200 without metrics body")
 		}

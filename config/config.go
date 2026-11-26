@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 
 	"gopkg.in/yaml.v2"
 )
@@ -65,6 +66,8 @@ type Config struct {
 	MaxHeaderBytes int `yaml:"max_header_bytes"`
 	// AccessLog writes one structured JSON line per proxied request to stdout.
 	AccessLog bool `yaml:"access_log"`
+	// DialTimeout is how long to wait when connecting to a destination, in seconds.
+	DialTimeout int `yaml:"dial_timeout"`
 	// MetricsAddr is a separate HTTP listener that serves /metrics only, for a
 	// collector. Empty disables it.
 	MetricsAddr string `yaml:"metrics_addr"`
@@ -73,7 +76,9 @@ type Config struct {
 	MetricsAllow []string `yaml:"metrics_allow"`
 }
 
-var config interface{}
+// current holds the active configuration. It is swapped atomically on reload,
+// so readers never see a half-updated config.
+var current atomic.Pointer[Config]
 var configPath string = ""
 
 func getConfigArgs() {
@@ -98,15 +103,9 @@ func PACFile() string {
 	return filepath.Join(dir, "proxy.pac")
 }
 
-func GetConfig() (Config, error) {
-	if config != nil {
-		return config.(Config), nil
-	}
-
-	if configPath == "" {
-		getConfigArgs()
-	}
-	result := Config{
+// defaults returns the configuration used for every field the file does not set.
+func defaults() Config {
+	return Config{
 		Addr:           ":4080",
 		Limit:          10,
 		Logger:         true,
@@ -115,6 +114,7 @@ func GetConfig() (Config, error) {
 		IdleTimeout:    300,
 		MaxConnections: 1024,
 		AccessLog:      true,
+		DialTimeout:    10,
 		MaxHeaderBytes: 16 << 10,
 		Auth: Auth{
 			Enabled:          false,
@@ -136,26 +136,46 @@ func GetConfig() (Config, error) {
 			BlockSpecialRanges: true,
 		},
 	}
+}
 
-	f, err := os.Open(configPath)
+// Load reads and parses the config file at path, applying defaults. It does not
+// validate or store the result.
+func Load(path string) (Config, error) {
+	result := defaults()
+	f, err := os.Open(path)
 	if err != nil {
 		return result, err
 	}
+	defer f.Close()
 	buff, err := io.ReadAll(f)
 	if err != nil {
 		return result, err
 	}
-	err = yaml.Unmarshal(buff, &result)
-	if err != nil {
+	if err := yaml.Unmarshal(buff, &result); err != nil {
 		return result, err
 	}
-	config = result
+	return result, nil
+}
 
-	return config.(Config), nil
+// GetConfig returns the active configuration, loading it from the config file on
+// first use.
+func GetConfig() (Config, error) {
+	if p := current.Load(); p != nil {
+		return *p, nil
+	}
+	if configPath == "" {
+		getConfigArgs()
+	}
+	c, err := Load(configPath)
+	if err != nil {
+		return c, err
+	}
+	current.Store(&c)
+	return c, nil
 }
 
 // Set replaces the loaded configuration. It is meant for tests and for code
 // that embeds the proxy handler.
 func Set(c Config) {
-	config = c
+	current.Store(&c)
 }

@@ -198,9 +198,65 @@ Metrics are kept in memory and reset when the service restarts. They are updated
 | `max_tunnel_seconds` | 0 | Closes a tunnel after this long, even if it is active. `0` = no limit. |
 | `limit` | 5000 KB/s | Throughput per direction for tunnels. |
 | `max_header_bytes` | 16384 | Maximum request header size. `0` = Go default (1 MB). |
+| `dial_timeout` | 10 s | How long to wait for a destination to accept the connection. |
 | `auth.max_failures` and related | 5 / 15 min | Failed logins per IP before a temporary block. |
 
 The service unit sets `LimitNOFILE=8192`, because every tunnel uses two sockets.
+
+## Configuration
+
+### Validation
+
+At startup Doppler checks the whole configuration and refuses to start if anything is wrong, listing every problem:
+
+```
+2026/11/26 00:15:05 invalid configuration:
+  - addr: "5000" is not host:port
+  - ACL.default: must be "permit" or "block" (got "allow")
+  - ACL.permit: "10.0.0.0/33" is not a valid CIDR range
+```
+
+It checks addresses and ports, `ACL.default`, every permit and block entry (IP, CIDR, name or leading `*.` wildcard), non-negative numbers, `metrics_allow`, TLS files, and, when auth is on, that TLS is enabled, users exist, and every password is a bcrypt hash.
+
+### Reload
+
+Send `SIGHUP` to reload the file without restarting:
+
+```bash
+sudo systemctl kill -s HUP doppler
+```
+
+The new file is validated first. If it is invalid, Doppler logs the reason and keeps the running configuration. If it is valid, it takes effect for the next request or connection: ACL, auth users and limits, access logging, and `metrics_allow`.
+
+Some settings are read only when the listeners start: `addr`, `tls_addr`, `tls_cert`, `tls_key`, `metrics_addr`, `max_connections`, `read_timeout`, `write_timeout`, and `max_header_bytes`. If a reload changes one of them, Doppler logs that it needs a restart and keeps the running value. Restart the service to apply it.
+
+## Testing
+
+```bash
+go test ./...          # 75 tests, about 15 seconds
+go test -race ./...    # same, with the race detector
+```
+
+The tests run the real proxy in memory against local servers. They do not depend on the service, the network, or the machine's DNS (names are resolved by a fixed table where needed).
+
+| Area | Covered by |
+|---|---|
+| Domains: permit, block, both lists, default allow/deny, case, trailing dot | `handler/proxy_test.go`, `internal/utils/acl_test.go` |
+| Wildcards `*.example.com` and apex behavior | `handler/suite_test.go`, `internal/utils/acl_test.go` |
+| Internationalized names (punycode) | `handler/suite_test.go`, `internal/utils/acl_test.go` |
+| Multiple resolved IPs, DNS failure | `handler/proxy_test.go` |
+| Direct IP, IPv4, IPv6, IPv4-mapped, CIDR, special ranges | `handler/proxy_test.go`, `internal/utils/acl_test.go` |
+| Authentication: success, failure, over TLS only, rate limit | `handler/proxy_test.go`, `handler/auth_test.go` |
+| Invalid and malformed CONNECT | `handler/proxy_test.go`, `handler/suite_test.go` |
+| Client and destination disconnects, half-close, goroutine cleanup | `handler/lifecycle_test.go`, `internal/utils/relay_test.go` |
+| Destination timeout (`dial_timeout`) | `handler/suite_test.go` |
+| Concurrent tunnels, pipelined data | `handler/proxy_test.go`, `handler/lifecycle_test.go` |
+| Limits: connections, tunnel duration, idle timeout | `handler/lifecycle_test.go`, `internal/utils/relay_test.go` |
+| Access log fields and secrets | `handler/access_test.go` |
+| Metrics and allow list | `internal/utils/metrics_test.go`, `handler/metrics_test.go` |
+| Config validation and reload | `config/config_test.go` |
+
+The IPv6 destination test is skipped when the machine has no IPv6 loopback.
 
 ## Transparent Traffic Redirection
 

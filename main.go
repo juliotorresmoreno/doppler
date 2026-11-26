@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +26,9 @@ func main() {
 		// Refuse to start with a configuration that did not load: requests would
 		// otherwise fail or run with partial settings.
 		log.Fatal("invalid configuration: ", err)
+	}
+	if errs := config.Validate(conf); len(errs) > 0 {
+		log.Fatalf("invalid configuration:\n  - %s", strings.Join(errs, "\n  - "))
 	}
 	svr, tlsSvr := server.Configure()
 	metricsSvr := server.ConfigureMetrics()
@@ -73,6 +77,24 @@ func main() {
 			}
 		}()
 	}
+
+	// SIGHUP reloads the configuration file. A bad file is rejected and the
+	// running configuration stays in place.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	go func() {
+		for range hup {
+			warnings, err := config.Reload()
+			if err != nil {
+				log.Println("reload failed, keeping the current configuration:", err)
+				continue
+			}
+			for _, w := range warnings {
+				log.Println("reload:", w)
+			}
+			log.Println("configuration reloaded")
+		}
+	}()
 
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
