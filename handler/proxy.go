@@ -139,6 +139,14 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []
 		return
 	}
 
+	release, ok := tunnels.track(clientConn, targetConn)
+	if !ok {
+		clientConn.Close()
+		targetConn.Close()
+		return
+	}
+	defer release()
+
 	if err := req.Write(targetConn); err != nil {
 		clientConn.Close()
 		targetConn.Close()
@@ -195,6 +203,14 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusInternalServerError)
 		return
 	}
+
+	release, ok := tunnels.track(clientConn, destConn)
+	if !ok {
+		clientConn.Close()
+		destConn.Close()
+		return
+	}
+	defer release()
 
 	h.Logger.RegisterWithLevel(utils.INFO, req.Host, "CONNECT", http.StatusOK)
 	utils.Relay(clientConn, destConn, idleTimeout(conf), conf.Limit) // limit in KB/s

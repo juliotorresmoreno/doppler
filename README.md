@@ -134,6 +134,7 @@ For CONNECT tunnels and WebSocket connections, Doppler:
 - **Closes idle tunnels** after `idle_timeout` seconds with no traffic (default 300; `0` disables this).
 - **Applies `limit` (KB/s) to each direction.** Traffic in both directions is throttled.
 - **Connects only to the addresses the ACL approved** (see "Policy evaluation").
+- **Shuts down cleanly:** on SIGINT or SIGTERM, Doppler refuses new tunnels, closes the open ones (both sides see the close), and then stops the HTTP listeners, waiting up to 5 seconds for in-flight requests.
 
 Destination connection attempts time out after 10 seconds.
 

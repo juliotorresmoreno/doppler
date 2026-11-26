@@ -1,13 +1,23 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"log"
 	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/juliotorresmoreno/doppler/config"
+	"github.com/juliotorresmoreno/doppler/handler"
 	"github.com/juliotorresmoreno/doppler/server"
 )
+
+// shutdownGrace is how long in-flight requests get to finish after a stop signal.
+const shutdownGrace = 5 * time.Second
 
 func main() {
 	conf, err := config.GetConfig()
@@ -15,9 +25,6 @@ func main() {
 		// Refuse to start with a configuration that did not load: requests would
 		// otherwise fail or run with partial settings.
 		log.Fatal("invalid configuration: ", err)
-	}
-	if conf.Auth.Enabled && conf.TLSAddr == "" {
-		log.Fatal("auth.enabled requires tls_addr: credentials are only accepted over TLS")
 	}
 	svr, tlsSvr := server.Configure()
 
@@ -36,19 +43,36 @@ func main() {
 		}
 		log.Println("TLS server listening on " + tlsSvr.Addr)
 		go func() {
-			log.Fatal(tlsSvr.ServeTLS(tlsConn, conf.TLSCert, conf.TLSKey))
+			if err := tlsSvr.ServeTLS(tlsConn, conf.TLSCert, conf.TLSKey); err != nil && err != http.ErrServerClosed {
+				log.Fatal(err)
+			}
 		}()
 	}
 
 	conn, err := net.Listen("tcp", svr.Addr)
-	log.Println("Server listening on " + svr.Addr)
-
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Println("Server listening on " + svr.Addr)
+	go func() {
+		if err := svr.Serve(conn); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
 
-	err = svr.Serve(conn)
-	if err != nil {
-		log.Fatal(err)
+	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	<-stop.Done()
+	log.Println("shutting down: closing tunnels")
+
+	// Tunnels are hijacked, so the HTTP shutdown does not wait for them; close them first.
+	handler.CloseTunnels()
+	ctx, done := context.WithTimeout(context.Background(), shutdownGrace)
+	defer done()
+	if tlsSvr != nil {
+		tlsSvr.Shutdown(ctx)
+	}
+	if err := svr.Shutdown(ctx); err != nil {
+		log.Println("shutdown:", err)
 	}
 }
