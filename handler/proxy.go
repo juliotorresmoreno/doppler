@@ -127,11 +127,15 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Each forwarded request gets its own connection to the destination (like a
+	// CONNECT tunnel). Close idle connections when the request ends, so none are
+	// left open waiting for the transport's idle timeout.
 	tr := h.transport()
+	defer tr.CloseIdleConnections()
 	tr.DialContext = dialApproved(ips)
 	resp, err := tr.RoundTrip(req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, req.Method, http.StatusServiceUnavailable)
 		return
 	}
