@@ -139,11 +139,15 @@ func (h *Proxy) handleWebSocket(w http.ResponseWriter, req *http.Request, ips []
 		return
 	}
 
-	req.Write(targetConn)
-	go io.Copy(targetConn, clientConn)
-	go io.Copy(clientConn, targetConn)
-
+	if err := req.Write(targetConn); err != nil {
+		clientConn.Close()
+		targetConn.Close()
+		h.Logger.RegisterWithLevel(utils.ERROR, hostPort, "WEBSOCKET", 0)
+		return
+	}
+	conf, _ := config.GetConfig()
 	h.Logger.RegisterWithLevel(utils.INFO, hostPort, "WEBSOCKET", 0)
+	utils.Relay(clientConn, targetConn, idleTimeout(conf), conf.Limit)
 }
 
 func (h *Proxy) transport() *http.Transport {
@@ -178,7 +182,8 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 
 	destConn, err := dialApprovedAddr(ips, req.Host)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		// The detail stays in the log; the client only learns it could not connect.
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusServiceUnavailable)
 		return
 	}
@@ -186,18 +191,18 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	clientConn, err := helper.GetHijack(w)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		destConn.Close()
 		h.Logger.RegisterWithLevel(utils.ERROR, req.Host, "CONNECT", http.StatusInternalServerError)
 		return
 	}
 
-	go io.Copy(destConn, clientConn)
-	if conf.Limit > 0 {
-		go utils.CopyWithRateLimit(clientConn, destConn, conf.Limit) // limit in KB/s
-	} else {
-		go io.Copy(clientConn, destConn)
-	}
 	h.Logger.RegisterWithLevel(utils.INFO, req.Host, "CONNECT", http.StatusOK)
+	utils.Relay(clientConn, destConn, idleTimeout(conf), conf.Limit) // limit in KB/s
+}
+
+// idleTimeout converts the configured idle_timeout (seconds) to a duration.
+func idleTimeout(conf config.Config) time.Duration {
+	return time.Duration(conf.IdleTimeout) * time.Second
 }
 
 // dialApproved returns a DialContext that connects only to the addresses the

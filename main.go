@@ -10,7 +10,12 @@ import (
 )
 
 func main() {
-	conf, _ := config.GetConfig()
+	conf, err := config.GetConfig()
+	if err != nil {
+		// Refuse to start with a configuration that did not load: requests would
+		// otherwise fail or run with partial settings.
+		log.Fatal("invalid configuration: ", err)
+	}
 	if conf.Auth.Enabled && conf.TLSAddr == "" {
 		log.Fatal("auth.enabled requires tls_addr: credentials are only accepted over TLS")
 	}

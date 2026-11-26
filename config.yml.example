@@ -7,6 +7,7 @@ public_host: ""    # domain used in proxy.pac; empty = Host header of the reques
 logger: false
 limit: 5000 # in KB/s
 read_timeout: 30
+idle_timeout: 300 # seconds without traffic before a tunnel is closed; 0 = never
 write_timeout: 120
 auth:
   enabled: false

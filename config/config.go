@@ -54,6 +54,7 @@ type Config struct {
 	Logger       bool   `yaml:"logger"`
 	ReadTimeout  int    `yaml:"read_timeout"`
 	WriteTimeout int    `yaml:"write_timeout"`
+	IdleTimeout  int    `yaml:"idle_timeout"` // seconds without traffic before a tunnel is closed; 0 disables
 }
 
 var config interface{}
@@ -95,6 +96,7 @@ func GetConfig() (Config, error) {
 		Logger:       true,
 		ReadTimeout:  30,
 		WriteTimeout: 120,
+		IdleTimeout:  300,
 		Auth: Auth{
 			Enabled:          false,
 			Users:            make(map[string]string),

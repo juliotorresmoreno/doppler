@@ -125,6 +125,18 @@ These rules apply to CONNECT tunnels, plain HTTP forwarding, and WebSocket reque
 
 **Limitations:** the decision is based on the DNS answer at request time. Hosts behind shared IPs (CDNs, load balancers) are matched by those shared addresses, so an address rule can block or allow more than one site. Test the policy against the destinations you care about before relying on it.
 
+## Tunnel lifecycle
+
+For CONNECT tunnels and WebSocket connections, Doppler:
+
+- **Closes both sockets** when the tunnel ends, so a closed client also closes the destination connection, and the other way around.
+- **Half-closes** when one side finishes sending: the peer sees EOF but can still send its reply.
+- **Closes idle tunnels** after `idle_timeout` seconds with no traffic (default 300; `0` disables this).
+- **Applies `limit` (KB/s) to each direction.** Traffic in both directions is throttled.
+- **Connects only to the addresses the ACL approved** (see "Policy evaluation").
+
+Destination connection attempts time out after 10 seconds.
+
 ## Transparent Traffic Redirection
 
 Doppler can be combined with tools such as [redsocks](https://github.com/darkk/redsocks) to redirect compatible outbound traffic transparently through the proxy.
