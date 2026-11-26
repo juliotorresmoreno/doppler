@@ -25,6 +25,8 @@ auth:
   # users: name: bcrypt hash (make one with: go run ./cmd/hashpw)
   users: {}
 ACL:
+  # Deny loopback, private, link-local and reserved addresses unless permitted by IP/CIDR.
+  block_special_ranges: true
   default: permit
   permit:
   block:

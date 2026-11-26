@@ -433,3 +433,18 @@ func TestBytesPipelinedAfterConnectAreNotLost(t *testing.T) {
 		}
 	}
 }
+
+func TestSpecialRangeDeniedOverTunnel(t *testing.T) {
+	_, addr := echoServer(t, "tcp", "127.0.0.1:0")
+	port := portOf(t, addr)
+	srv := startProxy(t, config.ACL{Default: "permit", BlockSpecialRanges: true})
+	expectStatus(t, srv.Listener.Addr().String(), "127.0.0.1:"+port, 403, "loopback under block_special_ranges")
+	expectStatus(t, srv.Listener.Addr().String(), "localhost:"+port, 403, "name resolving to loopback")
+}
+
+func TestSpecialRangePermittedExplicitlyOverTunnel(t *testing.T) {
+	_, addr := echoServer(t, "tcp", "127.0.0.1:0")
+	port := portOf(t, addr)
+	srv := startProxy(t, config.ACL{Default: "permit", BlockSpecialRanges: true, Permit: []string{"127.0.0.1"}})
+	expectStatus(t, srv.Listener.Addr().String(), "127.0.0.1:"+port, 200, "explicit IP permit for loopback")
+}

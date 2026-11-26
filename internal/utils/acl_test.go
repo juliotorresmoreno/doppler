@@ -5,7 +5,7 @@ import "testing"
 const unresolvable = "doppler-nonexistent-host.invalid"
 
 func allowed(host string, permit, block []string, def string) bool {
-	_, ok := Authorize(host, permit, block, def)
+	_, ok := Authorize(host, permit, block, def, false)
 	return ok
 }
 
@@ -28,7 +28,7 @@ func TestBlockListWinsOverPermit(t *testing.T) {
 }
 
 func TestIPLiteralUsesPolicy(t *testing.T) {
-	ips, ok := Authorize("127.0.0.1", nil, nil, "permit")
+	ips, ok := Authorize("127.0.0.1", nil, nil, "permit", false)
 	if !ok || len(ips) != 1 || ips[0].String() != "127.0.0.1" {
 		t.Errorf("IP literal with permit default: ok=%v ips=%v", ok, ips)
 	}
@@ -91,5 +91,63 @@ func TestWildcardInPermitListAllowsSubdomainWithDefaultBlock(t *testing.T) {
 	// localhost is not a subdomain of example.com, so it follows the default.
 	if allowed("localhost", []string{"*.example.com"}, nil, "block") {
 		t.Error("wildcard must not match unrelated names")
+	}
+}
+
+func TestInternationalizedNamesMatchPunycode(t *testing.T) {
+	cases := []struct {
+		entry, host string
+		want        bool
+	}{
+		{"münchen.de", "xn--mnchen-3ya.de", true},
+		{"xn--mnchen-3ya.de", "MÜNCHEN.de.", true},
+		{"*.münchen.de", "www.xn--mnchen-3ya.de", true},
+		{"*.münchen.de", "münchen.de", false},
+		{"münchen.de", "munchen.de", false},
+	}
+	for _, c := range cases {
+		if got := matchName(c.host, []string{c.entry}); got != c.want {
+			t.Errorf("matchName(%q, %q) = %v, want %v", c.host, c.entry, got, c.want)
+		}
+	}
+}
+
+func authorizeSpecial(host string, permit, block []string, def string) bool {
+	_, ok := Authorize(host, permit, block, def, true)
+	return ok
+}
+
+func TestSpecialRangesBlockedByDefaultPolicy(t *testing.T) {
+	for _, ip := range []string{"127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "::1", "fe80::1", "fc00::1", "::ffff:10.0.0.1", "0.0.0.0"} {
+		if authorizeSpecial(ip, nil, nil, "permit") {
+			t.Errorf("special address %s allowed under default permit", ip)
+		}
+	}
+}
+
+func TestPublicAddressesNotAffectedBySpecialRanges(t *testing.T) {
+	if !authorizeSpecial("8.8.8.8", nil, nil, "permit") {
+		t.Error("public address should follow the policy")
+	}
+}
+
+func TestExplicitIPPermitOverridesSpecialRange(t *testing.T) {
+	if !authorizeSpecial("127.0.0.1", []string{"127.0.0.1"}, nil, "block") {
+		t.Error("explicitly permitted loopback address should be allowed")
+	}
+	if !authorizeSpecial("10.0.0.0", []string{"10.0.0.0/8"}, nil, "block") {
+		t.Error("explicitly permitted private CIDR should be allowed")
+	}
+}
+
+func TestExplicitNamePermitAllowsResolvedSpecialAddress(t *testing.T) {
+	if !authorizeSpecial("localhost", []string{"localhost"}, nil, "block") {
+		t.Error("explicit name permit is honored even for special addresses")
+	}
+}
+
+func TestSpecialRangesCanBeDisabled(t *testing.T) {
+	if _, ok := Authorize("127.0.0.1", nil, nil, "permit", false); !ok {
+		t.Error("with block_special_ranges off, loopback follows the default policy")
 	}
 }

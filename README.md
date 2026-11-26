@@ -90,9 +90,21 @@ ACL:
 | `203.0.113.10` | that IP address |
 | `10.0.0.0/8` | every address in the range (IPv4 or IPv6) |
 
-Names are case-insensitive and a trailing dot is ignored. A wildcard is only accepted as a leading `*.`; `*` alone matches nothing. A subdomain is never matched by an exact name, so list `example.com` and `*.example.com` both if you want the apex and its subdomains.
+Names are case-insensitive, a trailing dot is ignored, and internationalized names match their punycode form (`münchen.de` and `xn--mnchen-3ya.de` are the same name). A wildcard is only accepted as a leading `*.`; `*` alone matches nothing. A subdomain is never matched by an exact name, so list `example.com` and `*.example.com` both if you want the apex and its subdomains.
 
 Name entries are compared with the requested hostname. Address entries (single IP or CIDR) are compared with **every address the hostname resolves to**, and with the address itself when the request is for an IP literal.
+
+### Special-purpose addresses
+
+With `block_special_ranges: true` (the default), addresses that are not meant to be reached through a public proxy are denied, even under `default: permit`:
+
+- loopback (`127.0.0.0/8`, `::1`)
+- private (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`)
+- link-local (`169.254/16`, `fe80::/10`), including cloud metadata endpoints such as `169.254.169.254`
+- multicast, unspecified (`0.0.0.0`, `::`)
+- reserved and documentation ranges (`100.64/10`, `240/4`, `192.0.2/24`, `198.51.100/24`, `203.0.113/24`, and similar)
+
+A special address is allowed only when it is explicitly permitted by IP or CIDR (for example `permit: [127.0.0.1]`), or when the name it belongs to is explicitly permitted. Set `block_special_ranges: false` to turn this off.
 
 ### Policy evaluation
 
@@ -102,9 +114,10 @@ Rules are evaluated in this order. The first matching step decides:
 2. **Resolve once:** the hostname is resolved one time. The resolved addresses are used for every later check and for the connection.
 3. **Block on address:** any resolved address matches a `block` entry (single IP or CIDR) → **deny**. This applies even when the name is permitted, and even when only one of several addresses is blocked.
 4. **Permit on name:** the hostname matches a `permit` entry → **allow**.
-5. **Permit on address:** any resolved address matches a `permit` entry → **allow**.
-6. **DNS failure:** the hostname cannot be resolved and was not allowed in step 4 → **deny**, regardless of `defaultPolicy`. Explicitly permitted names still go through, and the connection then fails with an error.
-7. **Default:** otherwise `defaultPolicy` applies.
+5. **DNS failure:** the hostname cannot be resolved and was not allowed in step 4 → **deny**, regardless of `defaultPolicy`. Explicitly permitted names still go through, and the connection then fails with an error.
+6. **Special-purpose address:** with `block_special_ranges` on, any resolved address in a special range that is not explicitly permitted by IP → **deny**.
+7. **Permit on address:** any resolved address matches a `permit` entry → **allow**.
+8. **Default:** otherwise `defaultPolicy` applies.
 
 Block always beats permit. Connections are made only to the addresses that passed step 3, so DNS cannot answer differently between the check and the connection.
 

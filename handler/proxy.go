@@ -83,7 +83,7 @@ func (h *Proxy) HandleHTTP(w http.ResponseWriter, req *http.Request) {
 		host, _, _ = net.SplitHostPort(host)
 	}
 
-	ips, ok := utils.Authorize(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default)
+	ips, ok := utils.Authorize(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default, conf.ACL.BlockSpecialRanges)
 	if !ok {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, req.Method, http.StatusForbidden)
@@ -169,7 +169,7 @@ func (h *Proxy) HandleConnect(w http.ResponseWriter, req *http.Request) {
 		host, _, _ = net.SplitHostPort(host)
 	}
 
-	ips, ok := utils.Authorize(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default)
+	ips, ok := utils.Authorize(host, conf.ACL.Permit, conf.ACL.Block, conf.ACL.Default, conf.ACL.BlockSpecialRanges)
 	if !ok {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		h.Logger.RegisterWithLevel(utils.WARN, req.Host, "CONNECT", http.StatusForbidden)

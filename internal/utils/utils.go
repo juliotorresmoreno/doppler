@@ -47,10 +47,13 @@ var LookupIP = net.LookupIP
 //  1. A name on the block list, or any resolved address on the block list
 //     (single IP or CIDR), denies.
 //  2. A name on the permit list allows.
-//  3. A resolved address on the permit list allows.
-//  4. A name that cannot be resolved is denied (fail closed).
-//  5. Anything else follows defaultPolicy.
-func Authorize(host string, permitList, blockList []string, defaultPolicy string) ([]net.IP, bool) {
+//  3. A name that cannot be resolved is denied (fail closed).
+//  4. If blockSpecial is set, any resolved address in a special-purpose range
+//     (loopback, private, link-local, reserved...) denies unless that address
+//     is explicitly permitted by IP or CIDR.
+//  5. A resolved address on the permit list allows.
+//  6. Anything else follows defaultPolicy.
+func Authorize(host string, permitList, blockList []string, defaultPolicy string, blockSpecial bool) ([]net.IP, bool) {
 	if matchName(host, blockList) {
 		return nil, false
 	}
@@ -70,6 +73,13 @@ func Authorize(host string, permitList, blockList []string, defaultPolicy string
 	}
 	if matchName(host, permitList) {
 		return ips, true
+	}
+	if blockSpecial {
+		for _, ip := range ips {
+			if isSpecial(ip) && !matchIP(ip, permitList) {
+				return nil, false
+			}
+		}
 	}
 	for _, ip := range ips {
 		if matchIP(ip, permitList) {

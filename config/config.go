@@ -37,6 +37,9 @@ type ACL struct {
 	Default string   `yaml:"default"`
 	Permit  []string `yaml:"permit"`
 	Block   []string `yaml:"block"`
+	// BlockSpecialRanges denies loopback, private, link-local and other reserved
+	// addresses unless they are explicitly permitted by IP or CIDR.
+	BlockSpecialRanges bool `yaml:"block_special_ranges"`
 }
 
 type Config struct {
@@ -106,9 +109,10 @@ func GetConfig() (Config, error) {
 			},
 		},
 		ACL: ACL{
-			Default: "permit",
-			Permit:  make([]string, 0),
-			Block:   make([]string, 0),
+			Default:            "permit",
+			Permit:             make([]string, 0),
+			Block:              make([]string, 0),
+			BlockSpecialRanges: true,
 		},
 	}
 
