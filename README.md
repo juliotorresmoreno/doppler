@@ -233,11 +233,12 @@ Some settings are read only when the listeners start: `addr`, `tls_addr`, `tls_c
 ## Testing
 
 ```bash
-go test ./...          # 75 tests, about 15 seconds
-go test -race ./...    # same, with the race detector
+go test ./...                 # all tests, about 20 seconds
+go test -race ./...           # same, with the race detector (what CI runs)
+go test ./handler -run='^$' -fuzz=FuzzParseBasic -fuzztime=60s   # longer fuzzing
 ```
 
-The tests run the real proxy in memory against local servers. They do not depend on the service, the network, or the machine's DNS (names are resolved by a fixed table where needed).
+The tests run the real proxy in memory against local servers, and the service binary for startup, reload and shutdown. They do not depend on the service, the public internet, or the machine's DNS (names are resolved by a fixed table where needed). CI (`.github/workflows/ci.yml`) runs format, vet, race-enabled tests and a build on every push and pull request.
 
 | Area | Covered by |
 |---|---|
@@ -248,13 +249,17 @@ The tests run the real proxy in memory against local servers. They do not depend
 | Direct IP, IPv4, IPv6, IPv4-mapped, CIDR, special ranges | `handler/proxy_test.go`, `internal/utils/acl_test.go` |
 | Authentication: success, failure, over TLS only, rate limit | `handler/proxy_test.go`, `handler/auth_test.go` |
 | Invalid and malformed CONNECT | `handler/proxy_test.go`, `handler/suite_test.go` |
+| WebSocket upgrade and policy | `handler/websocket_test.go` |
 | Client and destination disconnects, half-close, goroutine cleanup | `handler/lifecycle_test.go`, `internal/utils/relay_test.go` |
 | Destination timeout (`dial_timeout`) | `handler/suite_test.go` |
 | Concurrent tunnels, pipelined data | `handler/proxy_test.go`, `handler/lifecycle_test.go` |
-| Limits: connections, tunnel duration, idle timeout | `handler/lifecycle_test.go`, `internal/utils/relay_test.go` |
+| Limits: connections, tunnel duration, idle timeout, header size | `handler/lifecycle_test.go`, `internal/utils/relay_test.go`, `server/server_test.go` |
+| PAC endpoint: TLS and loopback rules, public_host, missing file | `server/server_test.go` |
 | Access log fields and secrets | `handler/access_test.go` |
-| Metrics and allow list | `internal/utils/metrics_test.go`, `handler/metrics_test.go` |
+| Metrics, allow list, separate listener | `internal/utils/metrics_test.go`, `handler/metrics_test.go`, `server/server_test.go` |
 | Config validation and reload | `config/config_test.go` |
+| Startup rejection, SIGHUP reload, SIGTERM shutdown (real binary) | `main_test.go` |
+| Fuzzing: auth header, ACL entries, YAML config, name and IP matching | `handler/fuzz_test.go`, `config/fuzz_test.go`, `internal/utils/fuzz_test.go` |
 
 The IPv6 destination test is skipped when the machine has no IPv6 loopback.
 

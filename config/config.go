@@ -179,3 +179,9 @@ func GetConfig() (Config, error) {
 func Set(c Config) {
 	current.Store(&c)
 }
+
+// SetPath sets the config file path that PACFile and Reload use. It is meant for
+// tests and for code that embeds the proxy.
+func SetPath(p string) {
+	configPath = p
+}
